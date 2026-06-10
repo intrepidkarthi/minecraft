@@ -67,7 +67,12 @@ async function boot() {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
     player.spawn = { ...spawn };
-    // starter kit: nothing — survival from scratch
+    // starter kit for Adyah: sword, pickaxe, axe, torches, apples
+    ui.inv[0] = { id: 'wood_sword',   count: 1, dur: ITEMS.wood_sword.tool.dura };
+    ui.inv[1] = { id: 'wood_pickaxe', count: 1, dur: ITEMS.wood_pickaxe.tool.dura };
+    ui.inv[2] = { id: 'wood_axe',     count: 1, dur: ITEMS.wood_axe.tool.dura };
+    ui.inv[3] = { id: B.TORCH,        count: 8 };
+    ui.inv[4] = { id: 'apple',        count: 5 };
   }
   ui.updateHotbar(); ui.updateHUD(player);
 
