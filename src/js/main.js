@@ -67,10 +67,11 @@ async function boot() {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
     player.spawn = { ...spawn };
-    // starter kit for Adyah: sword, pickaxe, axe, torches, apples
-    ui.inv[0] = { id: 'wood_sword',   count: 1, dur: ITEMS.wood_sword.tool.dura };
-    ui.inv[1] = { id: 'wood_pickaxe', count: 1, dur: ITEMS.wood_pickaxe.tool.dura };
-    ui.inv[2] = { id: 'wood_axe',     count: 1, dur: ITEMS.wood_axe.tool.dura };
+    // starter kit for Adyah: pickaxe first (default selected mines stone),
+    // then axe (wood), sword (mobs), torches, apples.
+    ui.inv[0] = { id: 'wood_pickaxe', count: 1, dur: ITEMS.wood_pickaxe.tool.dura };
+    ui.inv[1] = { id: 'wood_axe',     count: 1, dur: ITEMS.wood_axe.tool.dura };
+    ui.inv[2] = { id: 'wood_sword',   count: 1, dur: ITEMS.wood_sword.tool.dura };
     ui.inv[3] = { id: B.TORCH,        count: 8 };
     ui.inv[4] = { id: 'apple',        count: 5 };
   }
@@ -446,9 +447,9 @@ function makeHeldMesh(id) {
   }
   const tex = new THREE.CanvasTexture(iconFor(id));
   tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.42),
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6),
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
-  m.rotation.y = -0.5;
+  m.rotation.set(0, -0.3, 0);
   return m;
 }
 function updateViewModel(dt) {
