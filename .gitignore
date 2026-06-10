@@ -1,0 +1,22 @@
+# deps + build outputs
+node_modules/
+dist/
+*.log
+
+# OS junk
+.DS_Store
+
+# editor / tool config
+.claude/
+
+# excluded from the public push (game source only)
+videos/
+web/
+pics/
+assets/
+
+# legacy single-file game (superseded by src/js/ modular code)
+src/game.js
+src/photos.js
+src/characters.js
+src/serve.command

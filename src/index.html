@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>minecrAft</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="crosshair"><span></span><span></span></div>
+  <div id="hud"></div>
+  <div id="actiontext"></div>
+  <div id="toast"></div>
+  <div id="vignette"></div>
+  <div id="watertint"></div>
+  <div id="debug"></div>
+
+  <!-- overlays -->
+  <div id="screen"></div>
+  <div id="cursorstack"></div>
+  <div id="tooltip"></div>
+
+  <div id="playoverlay">
+    <div class="playcard">
+      <h1>minecr<span>A</span>ft</h1>
+      <p>Click to play</p>
+      <small>W A S D move &nbsp;·&nbsp; mouse look &nbsp;·&nbsp; E inventory &nbsp;·&nbsp; Esc pause</small>
+    </div>
+  </div>
+
+  <div id="loading">
+    <h1>minecr<span>A</span>ft</h1>
+    <p>Building world…</p>
+    <div class="loadtrack"><div id="loadbar"></div></div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
