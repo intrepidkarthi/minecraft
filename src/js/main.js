@@ -67,13 +67,17 @@ async function boot() {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
     player.spawn = { ...spawn };
-    // starter kit for Adyah: pickaxe first (default selected mines stone),
-    // then axe (wood), sword (mobs), torches, apples.
+    // starter kit for Adyah: tools first, then placeable blocks so he can
+    // start building immediately without having to mine first.
     ui.inv[0] = { id: 'wood_pickaxe', count: 1, dur: ITEMS.wood_pickaxe.tool.dura };
     ui.inv[1] = { id: 'wood_axe',     count: 1, dur: ITEMS.wood_axe.tool.dura };
     ui.inv[2] = { id: 'wood_sword',   count: 1, dur: ITEMS.wood_sword.tool.dura };
     ui.inv[3] = { id: B.TORCH,        count: 8 };
     ui.inv[4] = { id: 'apple',        count: 5 };
+    ui.inv[5] = { id: B.OAK_PLANKS,   count: 32 };
+    ui.inv[6] = { id: B.DIRT,         count: 16 };
+    ui.inv[7] = { id: B.COBBLE,       count: 16 };
+    ui.inv[8] = { id: B.OAK_LOG,      count: 16 };
   }
   ui.updateHotbar(); ui.updateHUD(player);
 
