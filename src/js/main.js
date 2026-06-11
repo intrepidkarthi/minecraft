@@ -11,6 +11,7 @@ import { Particles } from './particles.js';
 import { GameAudio } from './audio.js';
 import { UI, iconFor } from './ui.js';
 import { itemDef, breakSeconds, canHarvest, attackDamage, smeltResult, fuelValue, ITEMS } from './items.js';
+import { Achievements } from './achievements.js';
 
 const HAS_API = !!(window.gameAPI && window.gameAPI.isElectron);
 const Store = {
@@ -27,7 +28,7 @@ const loadingBar = document.getElementById('loadbar');
 const playOverlay = document.getElementById('playoverlay');
 const canvas = document.getElementById('game');
 
-let world, renderer, player, ui, entities, particles, audio;
+let world, renderer, player, ui, entities, particles, audio, achievements;
 let timeOfDay = 0.02;
 let saveData = null;
 let running = false;
@@ -51,6 +52,8 @@ async function boot() {
   ui = new UI(audio);
   ui.renderDist = renderer.renderDist;
   entities = new Entities(world, renderer.scene, player, particles, audio);
+  achievements = new Achievements(ui, audio);
+  ui.onCraft = () => achievements.onCraft();
 
   // spawn point
   let spawn;
@@ -63,6 +66,7 @@ async function boot() {
     player.spawn = sp.spawn ? { x: sp.spawn[0], y: sp.spawn[1], z: sp.spawn[2] } : { ...player.pos };
     ui.deserialize(saveData.ui);
     entities.deserialize(saveData.drops);
+    achievements.deserialize(saveData.ach);
   } else {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
@@ -190,6 +194,7 @@ function uiClosed() {
 // ============================================================ interaction
 let mineTarget = null, mineProgress = 0, mineTime = 0;
 let debugOn = false;
+let hintedPlace = false;
 
 function eyeRay() {
   const e = player.eyePos(), d = player.lookDir();
@@ -237,7 +242,12 @@ function rightClick() {
   }
 
   // place block
-  if (typeof held.id !== 'number' || !hit) return;
+  if (typeof held.id !== 'number') {
+    // tool/item selected — gentle one-time hint that placement needs a block in hand
+    if (hit && !hintedPlace) { ui.toast('📦 Press 6, 7, 8 or 9 to pick a block to place'); hintedPlace = true; }
+    return;
+  }
+  if (!hit) return;
   const px = hit.x + hit.face[0], py = hit.y + hit.face[1], pz = hit.z + hit.face[2];
   const targetId = world.getBlock(px, py, pz);
   if (!blockDef(targetId).replaceable) return;
@@ -261,6 +271,7 @@ function rightClick() {
   world.setBlock(px, py, pz, held.id);
   ui.consumeSelected();
   audio.play('place');
+  achievements.onPlace(held.id);
   swingT = 0;
 }
 
@@ -338,6 +349,7 @@ function breakBlock(hit, def) {
   world.setBlock(hit.x, hit.y, hit.z, B.AIR);
   particles.blockBreak(hit.x, hit.y, hit.z, hit.id);
   audio.play('break', def.sound);
+  achievements.onBreak(hit.id);
 
   // drops
   if (!player.flying) {
@@ -497,7 +509,8 @@ function buildSave() {
     ui: ui.serialize(),
     edits: [...world.edits],
     containers: [...world.containers],
-    drops: entities.serialize()
+    drops: entities.serialize(),
+    ach: achievements.serialize()
   };
 }
 let saveTimer = 0;
@@ -561,6 +574,7 @@ function loop(now) {
     tickFurnaces(dt);
     entities.dayFactor = renderer.sky.dayFactor;
     entities.update(dt, isNight);
+    achievements.onTick(timeOfDay);
 
     // death
     if (player.dead && ui.overlay !== 'death') {
@@ -631,6 +645,7 @@ boot().then(() => {
     canvas.requestPointerLock();
   };
   ui.onRenderDist = (v) => { renderer.renderDist = v; };
-  entities.onPickup = (stack) => ui.addToInventory(stack);
+  entities.onPickup = (stack) => { achievements.onPickup(stack.id); return ui.addToInventory(stack); };
+  entities.onMobKill = (type) => achievements.onMobKill(type);
   entities.onExplosion = explode;
 });

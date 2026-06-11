@@ -187,6 +187,7 @@ export class Entities {
     this.mobs = []; this.items = []; this.arrows = [];
     this.onPickup = null;       // (stack) => leftoverCount
     this.onExplosion = null;    // (x,y,z,r) => void (block destruction handled by main)
+    this.onMobKill = null;      // (type) => void
     this.dayFactor = 1;
     this.spawnTimer = 0;
     this.rng = mulberry32((Math.random() * 1e9) | 0);
@@ -313,6 +314,7 @@ export class Entities {
             const n = lo + (this.rng() * (hi - lo + 1) | 0);
             for (let k = 0; k < n; k++) this.dropItem({ id, count: 1 }, m.pos.x, m.pos.y + 0.4, m.pos.z);
           }
+          if (this.onMobKill) this.onMobKill(m.type);
           this._removeMob(i);
         }
         continue;

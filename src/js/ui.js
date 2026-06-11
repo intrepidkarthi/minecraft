@@ -61,6 +61,7 @@ export class UI {
     this.container = null;  // {type, slots?|state?, pos}
     this.overlay = null;    // 'inventory'|'crafting'|'furnace'|'chest'|'pause'|'death'|'help'
     this.onClose = null;
+    this.onCraft = null;    // () => void  (set by main.js)
     this.world = null;
 
     this._buildHUD();
@@ -327,6 +328,7 @@ export class UI {
       }
       made++;
       this.audio.play('craft');
+      if (this.onCraft) this.onCraft();
     } while (all && made < 64);
   }
 
@@ -454,7 +456,7 @@ export class UI {
   }
 
   _buildDeath(panel) {
-    panel.classList.add('menu death');
+    panel.classList.add('menu', 'death');
     el('div', 'ptitle', panel).textContent = 'You died!';
     const b = el('button', 'mbtn', panel);
     b.textContent = 'Respawn';
@@ -462,7 +464,7 @@ export class UI {
   }
 
   _buildHelp(panel) {
-    panel.classList.add('menu help');
+    panel.classList.add('menu', 'help');
     el('div', 'ptitle', panel).textContent = 'How to Play';
     const rows = [
       ['W A S D', 'Move'], ['Mouse', 'Look around'], ['Space', 'Jump / swim up'],
