@@ -468,8 +468,10 @@ export class UI {
     el('div', 'ptitle', panel).textContent = 'How to Play';
     const rows = [
       ['W A S D', 'Move'], ['Mouse', 'Look around'], ['Space', 'Jump / swim up'],
-      ['Ctrl or double-W', 'Sprint'], ['Shift', 'Sneak'], ['Left click (hold)', 'Mine blocks / attack'],
-      ['Right click or R', 'Place block / use / eat'], ['1–9 / scroll', 'Choose hotbar item'],
+      ['Ctrl or double-W', 'Sprint'], ['Shift', 'Sneak'],
+      ['Left click (hold) or B', 'Mine block / attack'],
+      ['Right click or R', 'Place block / use / eat'],
+      ['1–9 / scroll', 'Choose hotbar item'],
       ['E', 'Inventory & 2×2 crafting'], ['Q', 'Drop item'], ['F', 'Toggle fly'], ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
     ];
     const tbl = el('div', 'helptable', panel);

@@ -141,7 +141,8 @@ document.addEventListener('keydown', (e) => {
   if (ui.isOpen()) return;
   if (e.code === 'KeyE') { ui.open('inventory'); document.exitPointerLock(); }
   if (e.code === 'KeyF') { player.flying = !player.flying; ui.toast(player.flying ? 'Flying: ON' : 'Flying: OFF'); }
-  if (e.code === 'KeyR') rightClick();   // keyboard alternative for placement / use
+  if (e.code === 'KeyR') rightClick();              // keyboard alternative for placement / use
+  if (e.code === 'KeyB') { mouseDown[0] = true; swingT = 0; }  // keyboard alternative for mine / attack
   if (e.code === 'KeyM') { const m = audio.toggleMute(); ui.toast(m ? 'Sound muted' : 'Sound on'); }
   if (e.code === 'F3') { debugOn = !debugOn; ui.showDebug(debugOn); }
   if (e.code === 'KeyQ') dropSelected();
@@ -153,6 +154,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false;
   if (e.code === 'KeyW') wantSprint = false;
+  if (e.code === 'KeyB') mouseDown[0] = false;
 });
 window.addEventListener('wheel', (e) => {
   if (!ui || ui.isOpen()) return;
@@ -161,10 +163,13 @@ window.addEventListener('wheel', (e) => {
 });
 document.addEventListener('mousedown', (e) => {
   if (!running || ui.isOpen()) return;
-  if (document.pointerLockElement !== canvas) return;
+  // Allow gameplay clicks even without pointer-lock (Mac trackpad can lose it easily).
+  // The play overlay covers the canvas before first play, so we won't accidentally fire then.
   mouseDown[e.button] = true;
   if (e.button === 2) rightClick();
   if (e.button === 0) { swingT = 0; }
+  // If pointer-lock isn't active, this click can re-acquire it transparently
+  if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 document.addEventListener('mouseup', (e) => { mouseDown[e.button] = false; });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -175,15 +180,22 @@ document.addEventListener('mousemove', (e) => {
   player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, player.pitch));
 });
 
+playOverlay.addEventListener('mousedown', (e) => {
+  // Swallow this click so the document handler below doesn't also count it as a
+  // mine/place. The user clicked to resume; they didn't mean to swing.
+  e.stopPropagation();
+});
 playOverlay.addEventListener('click', () => {
   playOverlay.style.display = 'none';
   canvas.requestPointerLock();
   audio._ensure();
 });
 document.addEventListener('pointerlockchange', () => {
-  // Esc during pointer lock is swallowed by the browser → treat unlock as "pause"
+  // Pointer-lock can drop for many reasons on macOS (Esc, focus loss, gesture). Don't
+  // jam the user into a pause menu — show the click-to-resume overlay instead so a
+  // single click puts them back in the game.
   if (document.pointerLockElement !== canvas && ui && !ui.isOpen() && running && !player.dead) {
-    ui.open('pause');
+    playOverlay.style.display = 'flex';
   }
 });
 
