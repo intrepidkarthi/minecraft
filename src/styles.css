@@ -12,12 +12,9 @@ canvas { image-rendering: pixelated; }
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
-.bar { display: flex; gap: 1px; height: 18px; }
-.bar.hearts, .bar.hunger, .bar.air { width: 396px; }
-.hearts { justify-content: flex-start; }
-.hunger { justify-content: flex-end; }
-.bar.air { justify-content: flex-end; }
-.heart, .drum, .bubble { width: 18px; height: 18px; display: inline-block; background-size: contain; background-repeat: no-repeat; }
+.bar { display: flex; gap: 2px; height: 22px; }
+.bar.hearts, .bar.hunger, .bar.air { width: auto; }
+.heart, .drum, .bubble { width: 22px; height: 22px; display: inline-block; background-size: contain; background-repeat: no-repeat; }
 .heart.full  { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"><path fill="%23e02a2a" stroke="%23300" stroke-width=".6" d="M4.5 8 1 4.5C0 3.5 0 2 1.2 1.2 2.2.5 3.6.8 4.5 2 5.4.8 6.8.5 7.8 1.2 9 2 9 3.5 8 4.5Z"/></svg>'); }
 .heart.half  { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"><path fill="%23501818" stroke="%23300" stroke-width=".6" d="M4.5 8 1 4.5C0 3.5 0 2 1.2 1.2 2.2.5 3.6.8 4.5 2 5.4.8 6.8.5 7.8 1.2 9 2 9 3.5 8 4.5Z"/><path fill="%23e02a2a" d="M4.5 8 1 4.5C0 3.5 0 2 1.2 1.2 2.2.5 3.6.8 4.5 2Z"/></svg>'); }
 .heart.empty { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"><path fill="%23501818" stroke="%23300" stroke-width=".6" d="M4.5 8 1 4.5C0 3.5 0 2 1.2 1.2 2.2.5 3.6.8 4.5 2 5.4.8 6.8.5 7.8 1.2 9 2 9 3.5 8 4.5Z"/></svg>'); }

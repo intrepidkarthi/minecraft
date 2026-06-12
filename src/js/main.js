@@ -141,6 +141,7 @@ document.addEventListener('keydown', (e) => {
   if (ui.isOpen()) return;
   if (e.code === 'KeyE') { ui.open('inventory'); document.exitPointerLock(); }
   if (e.code === 'KeyF') { player.flying = !player.flying; ui.toast(player.flying ? 'Flying: ON' : 'Flying: OFF'); }
+  if (e.code === 'KeyR') rightClick();   // keyboard alternative for placement / use
   if (e.code === 'KeyM') { const m = audio.toggleMute(); ui.toast(m ? 'Sound muted' : 'Sound on'); }
   if (e.code === 'F3') { debugOn = !debugOn; ui.showDebug(debugOn); }
   if (e.code === 'KeyQ') dropSelected();
