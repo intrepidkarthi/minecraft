@@ -2,6 +2,7 @@
 "use strict";
 import { B, blockDef, atlasCanvas, TILE, ATLAS_COLS } from './blocks.js';
 import { itemDef, itemName, itemIcon, maxStack, matchRecipe, smeltResult, fuelValue, ITEMS } from './items.js';
+import { PERKS } from './progression.js';
 
 const $ = (sel) => document.querySelector(sel);
 function el(tag, cls, parent) {
@@ -59,10 +60,12 @@ export class UI {
     this.craftGrid = new Array(9).fill(null);
     this.craftW = 2;
     this.container = null;  // {type, slots?|state?, pos}
-    this.overlay = null;    // 'inventory'|'crafting'|'furnace'|'chest'|'pause'|'death'|'help'
+    this.overlay = null;    // 'inventory'|'crafting'|'furnace'|'chest'|'pause'|'death'|'help'|'skills'
     this.onClose = null;
     this.onCraft = null;    // () => void  (set by main.js)
     this.world = null;
+    this.mainRows = 1;      // main-inventory rows unlocked (1..3); progression updates this
+    this.progression = null;
 
     this._buildHUD();
     this._buildScreens();
@@ -166,8 +169,9 @@ export class UI {
   addToInventory(stack) {
     let remaining = stack.count;
     const ms = maxStack(stack.id);
+    const cap = 9 + this.mainRows * 9;   // only unlocked slots are reachable
     // merge into existing (hotbar first)
-    for (const idxs of [[...Array(9).keys()], [...Array(27).keys()].map(i => i + 9)]) {
+    for (const idxs of [[...Array(9).keys()], [...Array(cap - 9).keys()].map(i => i + 9)]) {
       for (const i of idxs) {
         const s = this.inv[i];
         if (s && s.id === stack.id && s.count < ms && (typeof stack.id !== 'string' || !ITEMS[stack.id] || !ITEMS[stack.id].tool)) {
@@ -177,7 +181,7 @@ export class UI {
         }
       }
     }
-    for (let i = 0; i < 36; i++) {
+    for (let i = 0; i < cap; i++) {
       if (!this.inv[i]) {
         this.inv[i] = { id: stack.id, count: Math.min(ms, remaining) };
         if (stack.dur !== undefined) this.inv[i].dur = stack.dur;
@@ -249,6 +253,7 @@ export class UI {
     if (this.overlay === 'pause') return this._buildPause(panel);
     if (this.overlay === 'death') return this._buildDeath(panel);
     if (this.overlay === 'help') return this._buildHelp(panel);
+    if (this.overlay === 'skills') return this._buildSkills(panel);
 
     const title = el('div', 'ptitle', panel);
 
@@ -288,11 +293,17 @@ export class UI {
       }
     }
 
-    // player inventory section
+    // player inventory section — only unlocked rows are slottable
     el('div', 'ptitle small', panel).textContent = '';
+    const cap = 9 + this.mainRows * 9;
     const main = el('div', 'grid g9', panel);
-    for (let i = 9; i < 36; i++) {
+    for (let i = 9; i < cap; i++) {
       this._slot(main, () => this.inv[i], (s) => { this.inv[i] = s; }, 'invmain');
+    }
+    // show locked rows as dim placeholders so the player knows more is coming
+    for (let i = cap; i < 36; i++) {
+      const d = el('div', 'slot locked', main);
+      d.title = 'Locked — level up to unlock more slots';
     }
     const hot = el('div', 'grid g9 hotrow', panel);
     for (let i = 0; i < 9; i++) {
@@ -412,7 +423,8 @@ export class UI {
     // hotbar <-> main
     let remaining = s.count;
     const ms = maxStack(s.id);
-    const range = kind === 'invhot' ? [9, 36] : [0, 9];
+    const cap = 9 + this.mainRows * 9;
+    const range = kind === 'invhot' ? [9, cap] : [0, 9];
     for (let i = range[0]; i < range[1] && remaining > 0; i++) {
       const t = this.inv[i];
       if (t && t.id === s.id && t.count < ms) { const take = Math.min(ms - t.count, remaining); t.count += take; remaining -= take; }
@@ -443,6 +455,7 @@ export class UI {
     el('div', 'ptitle', panel).textContent = 'Game Paused';
     const btn = (label, fn) => { const b = el('button', 'mbtn', panel); b.textContent = label; b.onclick = () => { this.audio.play('click'); fn(); }; return b; };
     btn('Back to Game', () => this.close());
+    btn('Skills & Perks', () => { this.overlay = 'skills'; this._refreshOverlay(); });
     btn('How to Play', () => { this.overlay = 'help'; this._refreshOverlay(); });
     btn(this.audio.muted ? 'Sound: OFF' : 'Sound: ON', () => { this.audio.toggleMute(); this._refreshOverlay(); });
     const rd = el('div', 'rdrow', panel);
@@ -463,6 +476,32 @@ export class UI {
     b.onclick = () => { if (this.onRespawn) this.onRespawn(); };
   }
 
+  _buildSkills(panel) {
+    panel.classList.add('menu', 'skills');
+    el('div', 'ptitle', panel).textContent = 'Skills & Perks';
+    const prog = this.progression;
+    const pts = prog ? prog.pointsAvailable() : 0;
+    const ptsEl = el('div', 'hint', panel);
+    ptsEl.innerHTML = `Available skill points: <b>${pts}</b>`;
+    const grid = el('div', 'perkgrid', panel);
+    for (const p of PERKS) {
+      const card = el('div', 'perk', grid);
+      const t = el('div', 'perktitle', card); t.textContent = p.title;
+      const d = el('div', 'perkdesc', card);  d.textContent = p.desc;
+      const owned = prog && prog.hasPerk(p.id);
+      const b = el('button', 'mbtn small', card);
+      if (owned) { b.textContent = '✓ Unlocked'; b.disabled = true; b.classList.add('owned'); }
+      else if (pts <= 0) { b.textContent = 'Need more levels'; b.disabled = true; }
+      else {
+        b.textContent = 'Unlock (1 pt)';
+        b.onclick = () => { if (prog && prog.unlockPerk(p.id)) this._refreshOverlay(); };
+      }
+    }
+    const back = el('button', 'mbtn', panel);
+    back.textContent = 'Back';
+    back.onclick = () => { this.audio.play('click'); this.close(); };
+  }
+
   _buildHelp(panel) {
     panel.classList.add('menu', 'help');
     el('div', 'ptitle', panel).textContent = 'How to Play';
@@ -472,7 +511,8 @@ export class UI {
       ['Left click (hold) or B', 'Mine block / attack'],
       ['Right click or R', 'Place block / use / eat'],
       ['1–9 / scroll', 'Choose hotbar item'],
-      ['E', 'Inventory & 2×2 crafting'], ['Q', 'Drop item'], ['F', 'Toggle fly'], ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
+      ['E', 'Inventory & 2×2 crafting'], ['K', 'Skills & perks'], ['Q', 'Drop item'],
+      ['F', 'Toggle fly'], ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
     ];
     const tbl = el('div', 'helptable', panel);
     for (const [k, v] of rows) {

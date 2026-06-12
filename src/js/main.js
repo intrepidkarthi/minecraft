@@ -12,6 +12,7 @@ import { GameAudio } from './audio.js';
 import { UI, iconFor } from './ui.js';
 import { itemDef, breakSeconds, canHarvest, attackDamage, smeltResult, fuelValue, ITEMS } from './items.js';
 import { Achievements } from './achievements.js';
+import { Progression } from './progression.js';
 
 const HAS_API = !!(window.gameAPI && window.gameAPI.isElectron);
 const Store = {
@@ -28,7 +29,7 @@ const loadingBar = document.getElementById('loadbar');
 const playOverlay = document.getElementById('playoverlay');
 const canvas = document.getElementById('game');
 
-let world, renderer, player, ui, entities, particles, audio, achievements;
+let world, renderer, player, ui, entities, particles, audio, achievements, progression;
 let timeOfDay = 0.02;
 let saveData = null;
 let running = false;
@@ -53,6 +54,7 @@ async function boot() {
   ui.renderDist = renderer.renderDist;
   entities = new Entities(world, renderer.scene, player, particles, audio);
   achievements = new Achievements(ui, audio);
+  progression = new Progression(ui, audio, player, entities);
   ui.onCraft = () => achievements.onCraft();
 
   // spawn point
@@ -67,6 +69,7 @@ async function boot() {
     ui.deserialize(saveData.ui);
     entities.deserialize(saveData.drops);
     achievements.deserialize(saveData.ach);
+    progression.deserialize(saveData.prog);
   } else {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
@@ -134,6 +137,7 @@ document.addEventListener('keydown', (e) => {
     else { ui.open('pause'); document.exitPointerLock(); }
     return;
   }
+  if (e.code === 'KeyK' && !ui.isOpen()) { ui.open('skills'); document.exitPointerLock(); return; }
   if (ui.isOpen() && ui.overlay !== 'pause') {
     if (e.code === 'KeyE') ui.close();
     return;
@@ -216,7 +220,7 @@ function eyeRay() {
 
 function rightClick() {
   const { e, d } = eyeRay();
-  const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, 5);
+  const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach);
   const held = ui.selected();
 
   // interactive blocks
@@ -312,7 +316,7 @@ function doMining(dt) {
     const blockHit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, 3.6);
     if (mobHit && (!blockHit || mobHit.dist < blockHit.dist)) {
       const held = ui.selected();
-      entities.hitMob(mobHit.mob, attackDamage(held), d.x, d.z);
+      entities.hitMob(mobHit.mob, attackDamage(held) + (player.attackBonus || 0), d.x, d.z);
       if (held && typeof held.id === 'string' && ITEMS[held.id] && ITEMS[held.id].tool) ui.damageSelectedTool();
       attackCd = 0.35;
       swingT = 0;
@@ -322,7 +326,7 @@ function doMining(dt) {
     }
   }
 
-  const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, 5);
+  const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach);
   if (!hit) { mineTarget = null; mineProgress = 0; renderer.setCrack(null, 0); return; }
   const def = blockDef(hit.id);
   if (def.hardness < 0 && !player.flying) { renderer.setCrack(null, 0); return; }
@@ -363,6 +367,7 @@ function breakBlock(hit, def) {
   particles.blockBreak(hit.x, hit.y, hit.z, hit.id);
   audio.play('break', def.sound);
   achievements.onBreak(hit.id);
+  progression.onBreakOre(hit.id);
 
   // drops
   if (!player.flying) {
@@ -523,7 +528,8 @@ function buildSave() {
     edits: [...world.edits],
     containers: [...world.containers],
     drops: entities.serialize(),
-    ach: achievements.serialize()
+    ach: achievements.serialize(),
+    prog: progression.serialize()
   };
 }
 let saveTimer = 0;
@@ -603,7 +609,7 @@ function loop(now) {
     // highlight
     if (!ui.isOpen()) {
       const { e, d } = eyeRay();
-      renderer.setHighlight(world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, 5));
+      renderer.setHighlight(world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach));
     } else renderer.setHighlight(null);
   }
 
@@ -659,6 +665,6 @@ boot().then(() => {
   };
   ui.onRenderDist = (v) => { renderer.renderDist = v; };
   entities.onPickup = (stack) => { achievements.onPickup(stack.id); return ui.addToInventory(stack); };
-  entities.onMobKill = (type) => achievements.onMobKill(type);
+  entities.onMobKill = (type) => { achievements.onMobKill(type); progression.onMobKill(type); };
   entities.onExplosion = explode;
 });

@@ -188,6 +188,7 @@ export class Entities {
     this.onPickup = null;       // (stack) => leftoverCount
     this.onExplosion = null;    // (x,y,z,r) => void (block destruction handled by main)
     this.onMobKill = null;      // (type) => void
+    this.pickupMult = 1;        // perk: block magnet multiplies pickup radius
     this.dayFactor = 1;
     this.spawnTimer = 0;
     this.rng = mulberry32((Math.random() * 1e9) | 0);
@@ -493,7 +494,7 @@ export class Entities {
         it.vel.x += dx / d * pull * dt * 10; it.vel.y += dy / d * pull * dt * 10; it.vel.z += dz / d * pull * dt * 10;
       }
       moveEntity(this.world, it, dt);
-      if (d < 0.9 && it.pickupDelay <= 0 && !p.dead && this.onPickup) {
+      if (d < 0.9 * this.pickupMult && it.pickupDelay <= 0 && !p.dead && this.onPickup) {
         const leftover = this.onPickup(it.stack);
         if (leftover <= 0) { this.audio.play('pop'); this._removeItem(i); continue; }
         it.stack.count = leftover;

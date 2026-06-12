@@ -16,6 +16,8 @@ export class Player {
     this.sneaking = false;
 
     this.hp = 20; this.maxHp = 20;
+    // perk-tunable multipliers (set by progression.js; defaults match no-perk gameplay)
+    this.sprintMult = 1; this.reach = 5; this.fallDmgMult = 1; this.attackBonus = 0;
     this.hunger = 20; this.saturation = 5;
     this.air = 10; this.maxAir = 10;
     this.dead = false;
@@ -58,7 +60,7 @@ export class Player {
     this.sneaking = input.sneak && !this.flying;
 
     let speed = 4.32;
-    if (this.sprinting) speed = 5.61;
+    if (this.sprinting) speed = 5.61 * this.sprintMult;
     if (this.sneaking) speed = 1.31;
     if (this.flying) speed = input.sprint ? 16 : 10;
     if (this.inWater && !this.flying) speed *= 0.55;
@@ -102,7 +104,7 @@ export class Player {
 
     if (this.onGround && !wasGround && this.fallStart !== null) {
       const dist = this.fallStart - this.pos.y;
-      const dmg = Math.floor(dist - 3);
+      const dmg = Math.floor((dist - 3) * this.fallDmgMult);
       if (dmg > 0) {
         this.damage(dmg, 'fall');
         if (this.onSound) this.onSound('fall');

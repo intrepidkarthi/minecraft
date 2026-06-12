@@ -84,6 +84,23 @@ canvas { image-rendering: pixelated; }
 .helprow { display: flex; justify-content: space-between; gap: 18px; font-size: 13.5px; color: #333; }
 .helprow b { color: #1a1a1a; }
 
+/* ---------- XP bar (above hotbar) ---------- */
+.bar.xp { width: 360px; height: 9px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35); position: relative; margin-top: 14px; }
+.bar.xp .xp-fill { height: 100%; background: linear-gradient(#7ade45, #4aa825); width: 0%; transition: width .25s; }
+.bar.xp .lvl-text { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); color: #7ade45; font: 700 13px 'Segoe UI', sans-serif; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+
+/* ---------- locked inventory slots ---------- */
+.panel .slot.locked { background: #555; border-color: #444 #6a6a6a #6a6a6a #444; cursor: not-allowed; opacity: 0.55; position: relative; }
+.panel .slot.locked::after { content: '🔒'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; opacity: 0.8; }
+
+/* ---------- skills overlay ---------- */
+.panel.skills { min-width: 540px; }
+.perkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin: 8px 0; }
+.perk { background: #b0b0b0; border: 2px solid; border-color: #fff #555 #555 #fff; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.perktitle { font-weight: 700; font-size: 14px; color: #1a1a1a; }
+.perkdesc { font-size: 12px; color: #333; }
+.mbtn.owned { background: #4a7a4a; cursor: default; }
+
 /* ---------- play / loading ---------- */
 #playoverlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8, 10, 24, .55); z-index: 60; cursor: pointer; }
 .playcard { text-align: center; color: #fff; }
