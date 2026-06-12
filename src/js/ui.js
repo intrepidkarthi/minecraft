@@ -100,7 +100,11 @@ export class UI {
     img.getContext('2d').drawImage(cv, 0, 0);
     img.className = 'icon';
     div.appendChild(img);
-    if (stack.count > 1) {
+    if (stack.unlimited) {
+      const n = el('span', 'count', div);
+      n.textContent = '∞';
+      n.classList.add('inf');
+    } else if (stack.count > 1) {
       const n = el('span', 'count', div);
       n.textContent = stack.count;
     }
@@ -146,6 +150,7 @@ export class UI {
   consumeSelected(n = 1) {
     const s = this.inv[this.sel];
     if (!s) return;
+    if (s.unlimited) return;       // starter kit blocks never deplete
     s.count -= n;
     if (s.count <= 0) this.inv[this.sel] = null;
     this.updateHotbar();
@@ -154,6 +159,7 @@ export class UI {
   damageSelectedTool() {
     const s = this.inv[this.sel];
     if (!s || typeof s.id !== 'string') return;
+    if (s.unlimited) return;       // starter tools never break
     const d = ITEMS[s.id];
     if (!d || !d.tool) return;
     if (s.dur === undefined) s.dur = d.tool.dura;
@@ -505,6 +511,45 @@ export class UI {
   _buildHelp(panel) {
     panel.classList.add('menu', 'help');
     el('div', 'ptitle', panel).textContent = 'How to Play';
+
+    // Build tutorial — the most-asked question
+    const buildBox = el('div', 'helpsection', panel);
+    el('div', 'helphdr', buildBox).textContent = '🏗️ How to Build';
+    const buildSteps = [
+      ['1', 'Press a number key', '6 = planks, 7 = dirt, 8 = cobblestone, 9 = logs'],
+      ['2', 'Look at the ground in front of you', 'A faint outline shows where the block will go'],
+      ['3', 'Right-click — or press R', 'A block appears! Repeat to make walls, floors, towers']
+    ];
+    const buildList = el('div', 'helpsteps', buildBox);
+    for (const [n, action, hint] of buildSteps) {
+      const row = el('div', 'helpstep', buildList);
+      el('div', 'stepnum', row).textContent = n;
+      const tx = el('div', 'steptext', row);
+      el('b', null, tx).textContent = action;
+      el('span', 'subtext', tx).textContent = hint;
+    }
+    el('div', 'hint', buildBox).innerHTML = 'Your <b>planks, dirt, cobble, logs, torches, sword, pickaxe and axe</b> never run out — they show <b>∞</b>. Build all you want!';
+
+    // Mine tutorial
+    const mineBox = el('div', 'helpsection', panel);
+    el('div', 'helphdr', mineBox).textContent = '⛏️ How to Mine';
+    const mineSteps = [
+      ['1', 'Press 1', 'Wooden Pickaxe in hand'],
+      ['2', 'Look at any stone or block', ''],
+      ['3', 'Hold left-click — or press B', 'The block cracks, then breaks and you get it']
+    ];
+    const mineList = el('div', 'helpsteps', mineBox);
+    for (const [n, action, hint] of mineSteps) {
+      const row = el('div', 'helpstep', mineList);
+      el('div', 'stepnum', row).textContent = n;
+      const tx = el('div', 'steptext', row);
+      el('b', null, tx).textContent = action;
+      el('span', 'subtext', tx).textContent = hint;
+    }
+
+    // Full keybindings
+    const keysBox = el('div', 'helpsection', panel);
+    el('div', 'helphdr', keysBox).textContent = '⌨️ All Keys';
     const rows = [
       ['W A S D', 'Move'], ['Mouse', 'Look around'], ['Space', 'Jump / swim up'],
       ['Ctrl or double-W', 'Sprint'], ['Shift', 'Sneak'],
@@ -514,16 +559,16 @@ export class UI {
       ['E', 'Inventory & 2×2 crafting'], ['K', 'Skills & perks'], ['Q', 'Drop item'],
       ['F', 'Toggle fly'], ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
     ];
-    const tbl = el('div', 'helptable', panel);
+    const tbl = el('div', 'helptable', keysBox);
     for (const [k, v] of rows) {
       const r = el('div', 'helprow', tbl);
       el('b', null, r).textContent = k;
       el('span', null, r).textContent = v;
     }
-    el('div', 'hint', panel).textContent = 'Craft a crafting table for 3×3 recipes. Smelt ores in a furnace. Survive the night!';
+
     const b = el('button', 'mbtn', panel);
-    b.textContent = 'Back';
-    b.onclick = () => { this.audio.play('click'); this.overlay = 'pause'; this._refreshOverlay(); };
+    b.textContent = 'Got it! Back to game';
+    b.onclick = () => { this.audio.play('click'); this.close(); };
   }
 
   serialize() {

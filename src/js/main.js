@@ -74,17 +74,20 @@ async function boot() {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
     player.spawn = { ...spawn };
-    // starter kit for Adyah: tools first, then placeable blocks so he can
-    // start building immediately without having to mine first.
-    ui.inv[0] = { id: 'wood_pickaxe', count: 1, dur: ITEMS.wood_pickaxe.tool.dura };
-    ui.inv[1] = { id: 'wood_axe',     count: 1, dur: ITEMS.wood_axe.tool.dura };
-    ui.inv[2] = { id: 'wood_sword',   count: 1, dur: ITEMS.wood_sword.tool.dura };
-    ui.inv[3] = { id: B.TORCH,        count: 8 };
-    ui.inv[4] = { id: 'apple',        count: 5 };
-    ui.inv[5] = { id: B.OAK_PLANKS,   count: 32 };
-    ui.inv[6] = { id: B.DIRT,         count: 16 };
-    ui.inv[7] = { id: B.COBBLE,       count: 16 };
-    ui.inv[8] = { id: B.OAK_LOG,      count: 16 };
+    // starter kit for Adyah. Marked `unlimited: true` so blocks never
+    // deplete and tools never break — Adyah can keep building forever.
+    // Anything he picks up later behaves normally.
+    const kit = (id, count) => ({ id, count, unlimited: true });
+    const tool = (id) => ({ id, count: 1, dur: ITEMS[id].tool.dura, unlimited: true });
+    ui.inv[0] = tool('wood_pickaxe');
+    ui.inv[1] = tool('wood_axe');
+    ui.inv[2] = tool('wood_sword');
+    ui.inv[3] = kit(B.TORCH,      64);
+    ui.inv[4] = kit('apple',      10);
+    ui.inv[5] = kit(B.OAK_PLANKS, 64);
+    ui.inv[6] = kit(B.DIRT,       64);
+    ui.inv[7] = kit(B.COBBLE,     64);
+    ui.inv[8] = kit(B.OAK_LOG,    64);
   }
   ui.updateHotbar(); ui.updateHUD(player);
 
@@ -189,8 +192,15 @@ playOverlay.addEventListener('mousedown', (e) => {
   // mine/place. The user clicked to resume; they didn't mean to swing.
   e.stopPropagation();
 });
+let firstLaunch = true;
 playOverlay.addEventListener('click', () => {
   playOverlay.style.display = 'none';
+  // First-launch tutorial: show help dialog if this is a fresh world
+  if (firstLaunch && !saveData) {
+    firstLaunch = false;
+    ui.open('pause'); ui.overlay = 'help'; ui._refreshOverlay();
+    return;
+  }
   canvas.requestPointerLock();
   audio._ensure();
 });
@@ -463,6 +473,23 @@ function tickFurnaces(dt) {
 }
 let furnaceUiT = 0;
 
+function actionHintFor(held) {
+  if (!held) return '✋ Press 1–9 to pick an item';
+  if (typeof held.id === 'number') {
+    if (held.id === B.TORCH) return '🔥 Right-click or R to place a torch';
+    return '🧱 Right-click or R to place a block';
+  }
+  const d = ITEMS[held.id];
+  if (d && d.food)  return '🍎 Right-click or R to eat';
+  if (d && d.tool) {
+    if (d.tool.cls === 'pickaxe') return '⛏️  Hold left-click or B to mine stone';
+    if (d.tool.cls === 'axe')     return '🪓 Hold left-click or B to chop wood';
+    if (d.tool.cls === 'sword')   return '⚔️  Left-click or B to attack monsters';
+    if (d.tool.cls === 'shovel')  return '🥄 Hold left-click or B to dig dirt';
+  }
+  return '';
+}
+
 // ============================================================ view model (held item)
 let vmGroup = null, vmMesh = null, vmHeld = null;
 function makeHeldMesh(id) {
@@ -632,6 +659,9 @@ function loop(now) {
 
   // underwater tint
   document.getElementById('watertint').style.display = player.headInWater ? 'block' : 'none';
+
+  // persistent action hint based on selected item
+  ui.setAction(actionHintFor(ui.selected()));
 
   renderer.render();
 
