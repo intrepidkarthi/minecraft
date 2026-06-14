@@ -266,6 +266,25 @@ reg('chest_top'); painter(T.chest_top, p => {
   noiseFill(p, 0xa3742e + 0x60000, .07);
   for (let i = 0; i < 16; i++) { p.hex(i, 0, 0x5c3e1c); p.hex(i, 15, 0x5c3e1c); p.hex(0, i, 0x5c3e1c); p.hex(15, i, 0x5c3e1c); }
 });
+reg('door'); painter(T.door, p => {
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    let c = vary(0x8a5a2e, p.rng, .05);
+    if (x === 0 || x === 15 || y === 0 || y === 15) c = 0x5e3d1c;   // frame
+    p.hex(x, y, c);
+  }
+  const panel = (y0, y1) => {
+    for (let x = 3; x <= 12; x++) { p.hex(x, y0, 0x5e3d1c); p.hex(x, y1, 0x5e3d1c); }
+    for (let y = y0; y <= y1; y++) { p.hex(3, y, 0x5e3d1c); p.hex(12, y, 0x5e3d1c); }
+  };
+  panel(2, 6); panel(9, 13);
+  p.hex(11, 8, 0x3a2410); p.hex(11, 7, 0xd9c27a);                   // knob
+});
+reg('door_open'); painter(T.door_open, p => {
+  // a narrow strip of door (swung open against the wall); rest transparent
+  for (let y = 1; y < 15; y++) for (let x = 1; x <= 4; x++) p.hex(x, y, vary(0x8a5a2e, p.rng, .05));
+  for (let y = 1; y < 15; y++) { p.hex(1, y, 0x5e3d1c); p.hex(4, y, 0x5e3d1c); }
+  p.hex(3, 8, 0xd9c27a);
+});
 reg('cactus_side'); painter(T.cactus_side, p => {
   noiseFill(p, 0x3a7a26, .08);
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x += 4) { p.hex(x, y, 0x57a33b); if (p.rng() > .8) p.hex(x + 2, y, 0x2c5e1d); }
@@ -352,7 +371,8 @@ export const B = {
   BIRCH_LOG: 22, BIRCH_LEAVES: 23, SPRUCE_LOG: 24, SPRUCE_LEAVES: 25, CRAFTING: 26, FURNACE: 27,
   FURNACE_LIT: 28, TORCH: 29, GLASS: 30, BRICKS: 31, STONE_BRICKS: 32, GLOWSTONE: 33,
   TALL_GRASS: 34, DANDELION: 35, POPPY: 36, DEAD_BUSH: 37, OBSIDIAN: 38, LAVA: 39,
-  MOSSY_COBBLE: 40, WOOL: 41, PUMPKIN: 42, BIRCH_PLANKS: 43, SPRUCE_PLANKS: 44, BOOKSHELF: 45, CHEST: 46
+  MOSSY_COBBLE: 40, WOOL: 41, PUMPKIN: 42, BIRCH_PLANKS: 43, SPRUCE_PLANKS: 44, BOOKSHELF: 45, CHEST: 46,
+  DOOR: 47, DOOR_OPEN: 48
 };
 
 // def: name, tex(6), solid(collision), opaque(light blocking/face culling), cross, translucent,
@@ -411,6 +431,8 @@ def(B.BIRCH_PLANKS, 'Birch Planks', all(T.birch_planks), { hardness: 2, tool: 'a
 def(B.SPRUCE_PLANKS, 'Spruce Planks', all(T.spruce_planks), { hardness: 2, tool: 'axe', sound: 'wood' });
 def(B.BOOKSHELF, 'Bookshelf', faces(T.oak_planks, T.oak_planks, T.bookshelf), { hardness: 1.5, tool: 'axe', drop: { id: B.OAK_PLANKS, count: 3 }, sound: 'wood' });
 def(B.CHEST, 'Chest', [T.chest_side, T.chest_side, T.chest_top, T.chest_top, T.chest_front, T.chest_side], { hardness: 2.5, tool: 'axe', sound: 'wood' });
+def(B.DOOR, 'Door', all(T.door), { opaque: false, hardness: 2, tool: 'axe', drop: { id: B.DOOR, count: 1 }, sound: 'wood' });
+def(B.DOOR_OPEN, 'Door', all(T.door_open), { solid: false, opaque: false, cross: true, hardness: 2, tool: 'axe', drop: { id: B.DOOR, count: 1 }, sound: 'wood' });
 
 export const BLOCKS = D;
 export function blockDef(id) { return D[id] || D[0]; }

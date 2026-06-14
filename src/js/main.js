@@ -35,6 +35,22 @@ let timeOfDay = 0.02;
 let saveData = null;
 let running = false;
 
+// A full house-building palette — every existing building block, infinite, so
+// Adyah can make walls, windows, roofs, floors and decoration without crafting.
+const BUILDER_KIT = [
+  B.STONE, B.SPRUCE_PLANKS, B.BIRCH_PLANKS, B.GLASS, B.DOOR, B.BRICKS, B.STONE_BRICKS,
+  B.SANDSTONE, B.MOSSY_COBBLE, B.WOOL, B.GLOWSTONE, B.BOOKSHELF, B.SAND
+];
+function giveBuilderKit() {
+  for (const id of BUILDER_KIT) {
+    if (ui.inv.some(s => s && s.id === id)) continue;     // already have it
+    const slot = ui.inv.findIndex(s => !s);
+    if (slot < 0) break;                                  // inventory full
+    ui.inv[slot] = { id, count: 64, unlimited: true };
+  }
+  ui.updateHotbar();
+}
+
 async function boot() {
   saveData = await Store.load();
   if (saveData && saveData.version !== 2) saveData = null; // old format → fresh world
@@ -91,7 +107,10 @@ async function boot() {
     ui.inv[6] = kit(B.DIRT,       64);
     ui.inv[7] = kit(B.COBBLE,     64);
     ui.inv[8] = kit(B.OAK_LOG,    64);
+    giveBuilderKit();
   }
+  // grant the building palette once to existing worlds too
+  if (saveData && !saveData.builderKit) giveBuilderKit();
   ui.updateHotbar(); ui.updateHUD(player);
 
   // pregenerate spawn area with progress bar
@@ -264,6 +283,16 @@ function rightClick() {
       ui.open('chest', { type: 'chest', slots: st.slots, pos: k });
       document.exitPointerLock(); return;
     }
+    if (id === B.DOOR || id === B.DOOR_OPEN) {
+      // open/close the whole door (toggle both stacked halves)
+      const tgt = id === B.DOOR_OPEN ? B.DOOR : B.DOOR_OPEN;
+      for (const yy of [hit.y - 1, hit.y, hit.y + 1]) {
+        const b = world.getBlock(hit.x, yy, hit.z);
+        if (b === B.DOOR || b === B.DOOR_OPEN) world.setBlock(hit.x, yy, hit.z, tgt);
+      }
+      audio.play('place');
+      return;
+    }
   }
 
   if (!held) return;
@@ -307,6 +336,16 @@ function rightClick() {
     const overlapZ = Math.abs(player.pos.z - (pz + 0.5)) < 0.5 + player.hw;
     const overlapY = player.pos.y < py + 1 && player.pos.y + player.h > py;
     if (overlapX && overlapZ && overlapY) return;
+  }
+  if (held.id === B.DOOR) {
+    // doors are two blocks tall — place the bottom here and a top above it
+    world.setBlock(px, py, pz, B.DOOR);
+    if (blockDef(world.getBlock(px, py + 1, pz)).replaceable) world.setBlock(px, py + 1, pz, B.DOOR);
+    ui.consumeSelected();
+    audio.play('place');
+    achievements.onPlace(B.DOOR);
+    swingT = 0;
+    return;
   }
   world.setBlock(px, py, pz, held.id);
   ui.consumeSelected();
@@ -570,7 +609,8 @@ function buildSave() {
     drops: entities.serialize(),
     ach: achievements.serialize(),
     prog: progression.serialize(),
-    quest: quests.serialize()
+    quest: quests.serialize(),
+    builderKit: true
   };
 }
 let saveTimer = 0;

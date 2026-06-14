@@ -30,6 +30,10 @@ export class Quests {
     this.origin = { x: 0, z: 0 };
     this.opened = new Set();   // treasure keys already collected
     this._tpos = null;         // cached treasure positions [{x,y,z,key,i}]
+    // endless mini-adventures after the main story is done
+    this.repeat = null;        // active repeatable adventure, or null
+    this.repeatTimer = 0;      // seconds until the next adventure appears
+    this.repeatCount = 0;
     this._dialogOpen = false;
     this._buildDom();
   }
@@ -68,6 +72,7 @@ export class Quests {
     else if (this.step === TALK_AARAV) this._spawnAarav();
     else if (this.step === TREASURE) this._placeTreasures();
     else if (this.step === BEAT_DRAGON) this._spawnDragon();
+    else if (this.step === DONE) { this.repeat = null; this.repeatTimer = 40; }   // resume endless mode
     this._refreshHud();
   }
 
@@ -166,6 +171,8 @@ export class Quests {
       this._toast('💥 The monster is defeated! Go talk to Aarav.');
     } else if (type === 'dragon' && this.step === BEAT_DRAGON) {
       this._finale();
+    } else if (type === 'rboss' && this.repeat && this.repeat.type === 'hunt') {
+      this._completeRepeat();
     }
   }
 
@@ -193,16 +200,18 @@ export class Quests {
     this._dialog('🏆 Hero of the Land!', [
       "You did it, Adyah — the dragon is defeated! 🐉⚔️",
       "You found the Star Blade, rescued Aarav, and dug up Dad's treasures.",
-      "Your whole family is so proud of you. Keep building your world! 🎉"
+      "Your whole family is so proud of you. Keep building your world! 🎉",
+      "And keep your eyes open — new adventures will keep finding you! ✨"
     ]);
+    this.repeatTimer = 40;   // start the endless adventures
   }
 
   // ---- per-frame ----
   update(dt) {
     // treasure pickup by walking up to a chest
     if (this.step === TREASURE) this._checkTreasures();
+    if (this.step === DONE) this._updateRepeat(dt);
 
-    if (this.step === DONE) { this.elHud.style.display = 'none'; return; }
     const target = this._currentTarget();
     if (!target) { this.elHud.style.display = 'none'; return; }
     this.elHud.style.display = 'block';
@@ -217,12 +226,54 @@ export class Quests {
     let html = `<div class="q-obj">📜 ${this._objective()}</div>`;
     html += `<div class="q-nav">${arrow} <b>${target.name}</b> — ${Math.round(dist)}m</div>`;
     const bossMob = this.step === BEAT_BOSS ? this.entities.findQuestMob('boss')
-      : this.step === BEAT_DRAGON ? this.entities.findQuestMob('dragon') : null;
+      : this.step === BEAT_DRAGON ? this.entities.findQuestMob('dragon')
+      : (this.repeat && this.repeat.type === 'hunt') ? this.entities.findQuestMob('rboss') : null;
     if (bossMob) {
       const f = Math.max(0, bossMob.hp) / (bossMob.maxHp || 70);
       html += `<div class="q-boss"><span>${this.step === BEAT_DRAGON ? 'Dragon' : 'Monster'}</span><div class="q-bar"><i style="width:${Math.round(f * 100)}%"></i></div></div>`;
     }
     this.elHud.innerHTML = html;
+  }
+
+  // ---- endless mini-adventures (after the main story) ----
+  _updateRepeat(dt) {
+    if (this.repeat) {
+      if (this.repeat.type === 'treasure') {
+        const dx = this.repeat.pos.x + 0.5 - this.player.pos.x, dz = this.repeat.pos.z + 0.5 - this.player.pos.z;
+        if (Math.hypot(dx, dz) < 2.8) this._completeRepeat();
+      }
+      return; // hunt completion comes via onMobKill('rboss')
+    }
+    this.repeatTimer -= dt;
+    if (this.repeatTimer <= 0) this._startRepeat();
+  }
+  _startRepeat() {
+    this.repeatCount++;
+    const ang = Math.random() * Math.PI * 2, d = 45 + Math.random() * 35;
+    const x = Math.round(this.origin.x + Math.cos(ang) * d), z = Math.round(this.origin.z + Math.sin(ang) * d);
+    const y = this._ground(x, z);
+    if (this.repeatCount % 2 === 1) {
+      const monsters = ['ogre', 'demon', 'slimeking', 'alien'];
+      const monster = monsters[this.repeatCount % monsters.length];
+      this.entities.spawnMob('boss', x + 0.5, y, z + 0.5, { monster, quest: 'rboss' });
+      this.repeat = { type: 'hunt', pos: { x, z }, monster };
+      this._toast('⚔️ A wild monster appeared! Follow the compass.');
+    } else {
+      this.repeat = { type: 'treasure', pos: { x, z } };
+      this._toast('🗺️ A new treasure is hidden nearby — follow the compass!');
+    }
+    this.audio.play('levelup');
+  }
+  _completeRepeat() {
+    const hunt = this.repeat.type === 'hunt';
+    if (this.progression && this.progression.addXp) this.progression.addXp(hunt ? 80 : 50);
+    const loot = hunt ? [{ id: 'diamond', count: 2 }, { id: 'gold_ingot', count: 4 }]
+                      : [{ id: 'diamond', count: 3 }, { id: 'apple', count: 4 }];
+    for (const l of loot) this.ui.addToInventory({ id: l.id, count: l.count });
+    this.audio.play('levelup');
+    this._toast(hunt ? '🏅 Monster defeated! Reward collected.' : '🎁 Treasure collected!');
+    this.repeat = null;
+    this.repeatTimer = 50 + Math.random() * 30;   // next adventure in ~1 minute
   }
 
   _checkTreasures() {
@@ -251,7 +302,10 @@ export class Quests {
       case TALK_AARAV: { const a = this.entities.findQuestMob('aarav'); const p = a ? a.pos : this.aaravPos; return { name: 'Aarav', x: p.x, z: p.z }; }
       case TREASURE: { const t = this._nearestTreasure(); return t ? { name: 'Treasure', x: t.x, z: t.z } : null; }
       case BEAT_DRAGON: { const d = this.entities.findQuestMob('dragon'); const p = d ? d.pos : this.dragonPos; return { name: 'Dragon', x: p.x, z: p.z }; }
-      default: return null;
+      default:
+        if (this.repeat && this.repeat.type === 'hunt') { const m = this.entities.findQuestMob('rboss'); const p = m ? m.pos : this.repeat.pos; return { name: 'Monster', x: p.x, z: p.z }; }
+        if (this.repeat && this.repeat.type === 'treasure') return { name: 'Treasure', x: this.repeat.pos.x, z: this.repeat.pos.z };
+        return null;
     }
   }
   _nearestTreasure() {
@@ -272,7 +326,10 @@ export class Quests {
       case TALK_AARAV: return 'Talk to Aarav and bring him home';
       case TREASURE: return `Find Dad's hidden treasures (${this.opened.size}/3)`;
       case BEAT_DRAGON: return 'Defeat the Dragon with the Star Blade!';
-      default: return '';
+      default:
+        if (this.repeat && this.repeat.type === 'hunt') return 'A wild monster is near — defeat it!';
+        if (this.repeat && this.repeat.type === 'treasure') return 'A new treasure awaits — go find it!';
+        return '';
     }
   }
 
@@ -331,12 +388,13 @@ export class Quests {
   _refreshHud() { /* update() repaints every frame */ }
 
   // ---- save ----
-  serialize() { return { step: this.step, started: this.started, origin: this.origin, opened: [...this.opened] }; }
+  serialize() { return { step: this.step, started: this.started, origin: this.origin, opened: [...this.opened], repeatCount: this.repeatCount }; }
   deserialize(d) {
     if (!d) return;
     this.step = d.step != null ? d.step : TALK_MOM;
     this.started = !!d.started;
     if (d.origin) this.origin = d.origin;
     if (Array.isArray(d.opened)) this.opened = new Set(d.opened);
+    this.repeatCount = d.repeatCount || 0;
   }
 }
