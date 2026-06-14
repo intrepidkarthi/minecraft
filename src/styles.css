@@ -168,6 +168,8 @@ canvas { image-rendering: pixelated; }
 #tc-close { left: 20px; top: 20px; display: none; }
 body.ui-open .tc-ctl:not(#tc-close) { display: none; }
 body.ui-open #tc-close { display: flex; }
+/* the HUD is normally click-through; on touch the hotbar must catch taps */
+body.is-touch .hotbar { pointer-events: auto; }
 /* finger-friendly inventory slots on touch */
 body.is-touch .slot { width: 58px; height: 58px; }
 body.is-touch .slot .icon { width: 46px; height: 46px; }
