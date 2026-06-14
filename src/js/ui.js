@@ -12,6 +12,17 @@ function el(tag, cls, parent) {
   return e;
 }
 
+// Build a new stack object from a source stack, carrying over the bits that
+// must never be lost when a kid drags / splits / shift-clicks items around the
+// inventory: the durability AND the `unlimited` flag. Dropping `unlimited` here
+// is exactly how Adyah's infinite starter kit used to silently run out.
+function packStack(src, count) {
+  const o = { id: src.id, count };
+  if (src.dur !== undefined) o.dur = src.dur;
+  if (src.unlimited) o.unlimited = true;
+  return o;
+}
+
 // ---------------------------------------------------------------- icons
 const iconCache = new Map();
 export function iconFor(id) {
@@ -189,8 +200,7 @@ export class UI {
     }
     for (let i = 0; i < cap; i++) {
       if (!this.inv[i]) {
-        this.inv[i] = { id: stack.id, count: Math.min(ms, remaining) };
-        if (stack.dur !== undefined) this.inv[i].dur = stack.dur;
+        this.inv[i] = packStack(stack, Math.min(ms, remaining));
         remaining -= this.inv[i].count;
         if (remaining <= 0) { this.updateHotbar(); this._refreshOverlay(); return 0; }
       }
@@ -386,15 +396,19 @@ export class UI {
         if (cur) {
           // place one
           if (kind === 'furnfuel' && fuelValue(cur.id) <= 0) return;
-          if (!s) { set && set({ id: cur.id, count: 1, dur: cur.dur }); cur.count--; }
-          else if (s.id === cur.id && s.count < maxStack(s.id)) { s.count++; cur.count--; set(s); }
+          if (!s) { set && set(packStack(cur, 1)); if (!cur.unlimited) cur.count--; }
+          else if (s.id === cur.id && s.count < maxStack(s.id)) { s.count++; if (!cur.unlimited) cur.count--; set(s); }
           if (cur.count <= 0) this.cursor = null;
         } else if (s) {
-          // split half
-          const half = Math.ceil(s.count / 2);
-          this.cursor = { id: s.id, count: half, dur: s.dur };
-          s.count -= half;
-          set && set(s.count > 0 ? s : null);
+          // split half — an infinite stack keeps the full kit and stays put
+          if (s.unlimited) {
+            this.cursor = packStack(s, s.count);
+          } else {
+            const half = Math.ceil(s.count / 2);
+            this.cursor = packStack(s, half);
+            s.count -= half;
+            set && set(s.count > 0 ? s : null);
+          }
         }
       }
       this.audio.play('click');
@@ -422,7 +436,7 @@ export class UI {
         if (t && t.id === s.id && t.count < ms) { const take = Math.min(ms - t.count, remaining); t.count += take; remaining -= take; }
       }
       for (let i = 0; i < 27 && remaining > 0; i++) {
-        if (!slots[i]) { slots[i] = { id: s.id, count: remaining, dur: s.dur }; remaining = 0; }
+        if (!slots[i]) { slots[i] = packStack(s, remaining); remaining = 0; }
       }
       return remaining;
     }
@@ -436,7 +450,7 @@ export class UI {
       if (t && t.id === s.id && t.count < ms) { const take = Math.min(ms - t.count, remaining); t.count += take; remaining -= take; }
     }
     for (let i = range[0]; i < range[1] && remaining > 0; i++) {
-      if (!this.inv[i]) { this.inv[i] = { id: s.id, count: remaining, dur: s.dur }; remaining = 0; }
+      if (!this.inv[i]) { this.inv[i] = packStack(s, remaining); remaining = 0; }
     }
     return remaining;
   }
