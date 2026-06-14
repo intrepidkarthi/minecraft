@@ -286,6 +286,17 @@ export class Entities {
   // quest helper: find a living mob tagged with a quest id (e.g. 'boss', 'aarav')
   findQuestMob(tag) { return this.mobs.find(m => m.quest === tag && m.dying <= 0) || null; }
 
+  // nearest story villager to a point (for forgiving, aim-free talking)
+  nearestQuestVillager(x, z, range) {
+    let best = null, bd = range;
+    for (const m of this.mobs) {
+      if (m.type !== 'villager' || !m.quest || m.dying > 0) continue;
+      const dd = Math.hypot(m.pos.x - x, m.pos.z - z);
+      if (dd < bd) { bd = dd; best = m; }
+    }
+    return best;
+  }
+
   dropItem(stack, x, y, z, vel) {
     let model;
     if (typeof stack.id === 'number') {
@@ -425,7 +436,12 @@ export class Entities {
       const hostileNow = def.hostile === true || (def.hostile === 'night' && (isNight || this._effLight(Math.floor(m.pos.x), Math.floor(m.pos.y), Math.floor(m.pos.z)) < 8)) || m.aggro;
       let desiredYaw = m.targetYaw, speed = 0;
 
-      if (m.fleeT > 0) {
+      if (m.quest && def.friendly) {
+        // story people (Mom, Aarav) stand still and face the player so a young
+        // kid can always walk up and talk to them — they never wander or flee.
+        desiredYaw = Math.atan2(dx, dz);
+        speed = 0;
+      } else if (m.fleeT > 0) {
         desiredYaw = Math.atan2(-dx, -dz);
         speed = def.speed * 1.4;
       } else if (def.hostile && hostileNow && dist3 < 18 && !p.dead) {

@@ -237,9 +237,12 @@ function eyeRay() {
 
 function rightClick() {
   const { e, d } = eyeRay();
-  // talk to a villager we're looking at (right-click to chat)
+  // talk to a villager: either the one we're aiming at, or — to be forgiving for
+  // a young kid — the nearest story villager (Mom/Aarav) we're standing next to.
   const npc = entities.raycastMob(e.x, e.y, e.z, d.x, d.y, d.z, 4);
-  if (npc && npc.mob.type === 'villager') { quests.talkTo(npc.mob); return; }
+  const talkMob = (npc && npc.mob.type === 'villager') ? npc.mob
+    : entities.nearestQuestVillager(player.pos.x, player.pos.z, 3.5);
+  if (talkMob) { quests.talkTo(talkMob); return; }
   const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach);
   const held = ui.selected();
 
@@ -681,10 +684,11 @@ function loop(now) {
     const er = eyeRay();
     const npc = entities.raycastMob(er.e.x, er.e.y, er.e.z, er.d.x, er.d.y, er.d.z, 4);
     if (npc && npc.mob.type === 'villager') talkNpc = npc.mob;
+    else talkNpc = entities.nearestQuestVillager(player.pos.x, player.pos.z, 3.5);
   }
   if (talkNpc) {
     const nm = talkNpc.who ? talkNpc.who.charAt(0).toUpperCase() + talkNpc.who.slice(1) : 'them';
-    ui.setAction(`🗨️ Right-click to talk to ${nm}`);
+    ui.setAction(`🗨️ Right-click or press R to talk to ${nm}`);
   } else {
     ui.setAction(actionHintFor(ui.selected()));
   }
