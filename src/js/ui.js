@@ -233,6 +233,13 @@ export class UI {
       this.cursorEl.style.top = e.clientY + 'px';
       this._tooltipMove(e);
     });
+    // touch: held item follows the finger while an inventory screen is open
+    document.addEventListener('touchmove', (e) => {
+      if (!this.cursor || !this.overlay) return;
+      const t = e.touches[0]; if (!t) return;
+      this.cursorEl.style.left = t.clientX + 'px';
+      this.cursorEl.style.top = t.clientY + 'px';
+    }, { passive: true });
   }
 
   isOpen() { return this.overlay !== null; }
@@ -354,66 +361,84 @@ export class UI {
     } while (all && made < 64);
   }
 
+  // Core slot interaction, shared by mouse and touch.
+  // button: 0 = pick up / place / merge, 2 = split half / place one.
+  _slotAction(button, shift, get, set, kind) {
+    const cur = this.cursor;
+    const s = get();
+    if (kind === 'craftout') {
+      if (button === 0) this._takeCraft(shift);
+      this._renderCursor(); this._refreshOverlay();
+      return;
+    }
+    if (shift && button === 0 && s && set) {
+      // quick-move
+      set(null);
+      const left = this._quickMove(s, kind);
+      if (left > 0) { s.count = left; set(s); }
+      this.updateHotbar(); this._refreshOverlay();
+      return;
+    }
+    if (button === 0) {
+      // left: swap / merge
+      const curIsTool = typeof cur?.id === 'string' && ITEMS[cur.id] && ITEMS[cur.id].tool;
+      if (cur && s && cur.id === s.id && !curIsTool) {
+        const ms = maxStack(s.id);
+        const take = Math.min(ms - s.count, cur.count);
+        s.count += take; cur.count -= take;
+        if (cur.count <= 0) this.cursor = null;
+        set(s);
+      } else {
+        if (set || !cur) { this.cursor = s; if (set) set(cur); }
+      }
+    } else if (button === 2) {
+      if (cur) {
+        // place one
+        if (kind === 'furnfuel' && fuelValue(cur.id) <= 0) return;
+        if (!s) { set && set(packStack(cur, 1)); if (!cur.unlimited) cur.count--; }
+        else if (s.id === cur.id && s.count < maxStack(s.id)) { s.count++; if (!cur.unlimited) cur.count--; set(s); }
+        if (cur.count <= 0) this.cursor = null;
+      } else if (s) {
+        // split half — an infinite stack keeps the full kit and stays put
+        if (s.unlimited) {
+          this.cursor = packStack(s, s.count);
+        } else {
+          const half = Math.ceil(s.count / 2);
+          this.cursor = packStack(s, half);
+          s.count -= half;
+          set && set(s.count > 0 ? s : null);
+        }
+      }
+    }
+    this.audio.play('click');
+    this._renderCursor();
+    this.updateHotbar();
+    this._refreshOverlay();
+  }
+
   _slot(parent, get, set, kind) {
     const div = el('div', 'slot', parent);
     const render = () => this.renderSlotInto(div, get());
     render();
-    div.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      const cur = this.cursor;
-      const s = get();
-      if (kind === 'craftout') {
-        if (e.button === 0) this._takeCraft(e.shiftKey);
-        this._renderCursor(); this._refreshOverlay();
-        return;
-      }
-      if (e.shiftKey && e.button === 0 && s && set) {
-        // quick-move
-        set(null);
-        const left = this._quickMove(s, kind);
-        if (left > 0) { s.count = left; set(s); }
-        this.updateHotbar(); this._refreshOverlay();
-        return;
-      }
-      if (e.button === 0) {
-        // left: swap / merge
-        const curIsTool = typeof cur?.id === 'string' && ITEMS[cur.id] && ITEMS[cur.id].tool;
-        if (cur && s && cur.id === s.id && !curIsTool) {
-          const ms = maxStack(s.id);
-          const take = Math.min(ms - s.count, cur.count);
-          s.count += take; cur.count -= take;
-          if (cur.count <= 0) this.cursor = null;
-          set(s);
-        } else {
-          if (set || !cur) { this.cursor = s; if (set) set(cur); }
-        }
-      } else if (e.button === 2) {
-        if (cur) {
-          // place one
-          if (kind === 'furnfuel' && fuelValue(cur.id) <= 0) return;
-          if (!s) { set && set(packStack(cur, 1)); if (!cur.unlimited) cur.count--; }
-          else if (s.id === cur.id && s.count < maxStack(s.id)) { s.count++; if (!cur.unlimited) cur.count--; set(s); }
-          if (cur.count <= 0) this.cursor = null;
-        } else if (s) {
-          // split half — an infinite stack keeps the full kit and stays put
-          if (s.unlimited) {
-            this.cursor = packStack(s, s.count);
-          } else {
-            const half = Math.ceil(s.count / 2);
-            this.cursor = packStack(s, half);
-            s.count -= half;
-            set && set(s.count > 0 ? s : null);
-          }
-        }
-      }
-      this.audio.play('click');
-      this._renderCursor();
-      this.updateHotbar();
-      this._refreshOverlay();
-    });
+    div.addEventListener('mousedown', (e) => { e.preventDefault(); this._slotAction(e.button, e.shiftKey, get, set, kind); });
     div.addEventListener('contextmenu', e => e.preventDefault());
     div.addEventListener('mouseenter', () => { const s = get(); if (s) this._tooltipShow(itemName(s.id)); });
     div.addEventListener('mouseleave', () => { this.elTooltip.style.display = 'none'; });
+    // touch: tap = pick up / place, long-press = split half / place one.
+    let lpTimer = null, handled = false;
+    div.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const t = e.changedTouches[0];
+      this.cursorEl.style.left = t.clientX + 'px'; this.cursorEl.style.top = t.clientY + 'px';
+      handled = false;
+      lpTimer = setTimeout(() => { handled = true; this._slotAction(2, false, get, set, kind); }, 450);
+    }, { passive: false });
+    div.addEventListener('touchend', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      clearTimeout(lpTimer);
+      if (!handled) this._slotAction(0, false, get, set, kind);
+    }, { passive: false });
+    div.addEventListener('touchcancel', () => clearTimeout(lpTimer));
     return div;
   }
 

@@ -154,15 +154,21 @@ canvas { image-rendering: pixelated; }
 
 /* ---------------- touch / tablet controls ---------------- */
 .tc-ctl { position: fixed; z-index: 45; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
-#tc-joy { left: 26px; bottom: 26px; width: 132px; height: 132px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.32); }
-#tc-thumb { position: absolute; left: 36px; top: 36px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,.4); pointer-events: none; }
-.tc-btn { width: 78px; height: 78px; border-radius: 50%; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.42); color: #fff; font-size: 30px; display: flex; align-items: center; justify-content: center; }
-.tc-btn.small { width: 54px; height: 54px; font-size: 22px; }
-.tc-btn:active { background: rgba(255,255,255,.36); }
-#tc-jump { right: 30px;  bottom: 30px; }
-#tc-down { right: 122px; bottom: 24px; }
-#tc-mine { right: 122px; bottom: 100px; }
-#tc-use  { right: 30px;  bottom: 154px; }
-#tc-fly  { right: 24px;  top: 78px; }
-#tc-inv  { right: 24px;  top: 18px; }
-body.ui-open .tc-ctl:not(#tc-inv) { display: none; }
+#tc-joy { left: 30px; bottom: 30px; width: 150px; height: 150px; border-radius: 50%; background: rgba(255,255,255,.13); border: 3px solid rgba(255,255,255,.34); }
+#tc-thumb { position: absolute; left: 41px; top: 41px; width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.45); pointer-events: none; }
+.tc-btn { width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,.17); border: 3px solid rgba(255,255,255,.45); color: #fff; font-size: 34px; display: flex; align-items: center; justify-content: center; }
+.tc-btn.small { width: 62px; height: 62px; font-size: 26px; }
+.tc-btn:active { background: rgba(255,255,255,.38); }
+#tc-jump { right: 32px;  bottom: 32px; }
+#tc-down { right: 138px; bottom: 26px; }
+#tc-mine { right: 138px; bottom: 124px; }
+#tc-use  { right: 32px;  bottom: 178px; }
+#tc-fly  { right: 26px;  top: 90px; }
+#tc-inv  { right: 26px;  top: 20px; }
+#tc-close { left: 20px; top: 20px; display: none; }
+body.ui-open .tc-ctl:not(#tc-close) { display: none; }
+body.ui-open #tc-close { display: flex; }
+/* finger-friendly inventory slots on touch */
+body.is-touch .slot { width: 58px; height: 58px; }
+body.is-touch .slot .icon { width: 46px; height: 46px; }
+body.is-touch #cursorstack .icon { width: 46px; height: 46px; }

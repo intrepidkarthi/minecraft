@@ -39,6 +39,7 @@ let running = false;
 // On-screen FPS controls for tablets/phones: left thumb-stick to move, drag the
 // screen to look, and tap buttons to mine / use / jump / descend / fly / inventory.
 function setupTouchControls() {
+  document.body.classList.add('is-touch');   // enlarges slots etc. via CSS
   const root = document.createElement('div'); root.id = 'tc'; document.body.appendChild(root);
   const mk = (id, cls, txt) => { const e = document.createElement('div'); e.id = id; e.className = 'tc-ctl ' + cls; if (txt) e.textContent = txt; root.appendChild(e); return e; };
   const joy = mk('tc-joy', '');
@@ -49,8 +50,10 @@ function setupTouchControls() {
   const bDown = mk('tc-down', 'tc-btn', '⬇️');
   const bFly  = mk('tc-fly', 'tc-btn small', '🕊️');
   const bInv  = mk('tc-inv', 'tc-btn small', '🎒');
+  const bClose = mk('tc-close', 'tc-btn', '✕');   // shown only while a screen is open
 
-  const R = 55;
+  const R = 62;                 // joystick radius
+  const LOOK_SENS = 0.0042;     // drag-to-look sensitivity (rad per px)
   let joyId = null, joyCx = 0, joyCy = 0, lookId = null, lookX = 0, lookY = 0;
 
   const setMove = (dx, dy) => {
@@ -79,7 +82,8 @@ function setupTouchControls() {
   hold(bDown, () => { keys['ShiftLeft'] = true; }, () => { keys['ShiftLeft'] = false; });
   tap(bUse, () => rightClick());
   tap(bFly, () => { player.flying = !player.flying; ui.toast(player.flying ? '🕊️ Flying — ⤴️ up, ⬇️ down' : 'Flying off'); });
-  tap(bInv, () => { if (ui.isOpen()) ui.close(); else ui.open('inventory'); });
+  tap(bInv, () => ui.open('inventory'));
+  tap(bClose, () => ui.close());
 
   joy.addEventListener('touchstart', (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -106,8 +110,8 @@ function setupTouchControls() {
       } else if (t.identifier === lookId) {
         e.preventDefault();
         if (!ui.isOpen() && !(quests && quests.blocking())) {
-          player.yaw -= (t.clientX - lookX) * 0.005;
-          player.pitch -= (t.clientY - lookY) * 0.005;
+          player.yaw -= (t.clientX - lookX) * LOOK_SENS;
+          player.pitch -= (t.clientY - lookY) * LOOK_SENS;
           player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, player.pitch));
         }
         lookX = t.clientX; lookY = t.clientY;
