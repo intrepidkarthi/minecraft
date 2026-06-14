@@ -624,9 +624,11 @@ function loop(now) {
 
     // death
     if (player.dead && ui.overlay !== 'death') {
-      // drop inventory
+      // drop inventory on death — but NEVER the infinite starter kit. Adyah keeps
+      // his tools and building blocks through death; only gathered items spill out.
       for (let i = 0; i < 36; i++) {
-        if (ui.inv[i]) { entities.dropItem(ui.inv[i], player.pos.x, player.pos.y + 1, player.pos.z); ui.inv[i] = null; }
+        const it = ui.inv[i];
+        if (it && !it.unlimited) { entities.dropItem(it, player.pos.x, player.pos.y + 1, player.pos.z); ui.inv[i] = null; }
       }
       ui.updateHotbar();
       ui.open('death');

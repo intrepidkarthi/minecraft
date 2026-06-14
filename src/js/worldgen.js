@@ -168,10 +168,10 @@ export class WorldGen {
 
       let treeChance = 0, kind = 'oak';
       switch (bio) {
-        case BIOME.FOREST: treeChance = 1 / 26; kind = r2 < 0.85 ? 'oak' : 'birch'; break;
-        case BIOME.BIRCH: treeChance = 1 / 30; kind = r2 < 0.7 ? 'birch' : 'oak'; break;
+        case BIOME.FOREST: treeChance = 1 / 42; kind = r2 < 0.85 ? 'oak' : 'birch'; break;
+        case BIOME.BIRCH: treeChance = 1 / 46; kind = r2 < 0.7 ? 'birch' : 'oak'; break;
         case BIOME.PLAINS: treeChance = 1 / 290; kind = 'oak'; break;
-        case BIOME.TAIGA: treeChance = 1 / 32; kind = 'spruce'; break;
+        case BIOME.TAIGA: treeChance = 1 / 48; kind = 'spruce'; break;
         case BIOME.SNOWY: treeChance = 1 / 220; kind = 'spruce'; break;
         case BIOME.MOUNTAINS: treeChance = h < 86 ? 1 / 120 : 0; kind = 'spruce'; break;
         case BIOME.DESERT: treeChance = 1 / 160; kind = 'cactus'; break;
@@ -238,17 +238,25 @@ export class WorldGen {
     put(wx, h + trunk + 1, wz, leaf, true);
   }
 
-  // find a good spawn near origin
+  // find a good spawn near origin — prefer open PLAINS so the player starts in
+  // the open and can see the varied world around them, not buried in a forest.
   findSpawn() {
+    let fallback = null;   // first dry, non-mountain spot of any biome
     for (let r = 0; r < 64; r++) {
       for (let a = 0; a < 8; a++) {
         const ang = a * Math.PI / 4;
         const x = Math.round(Math.cos(ang) * r * 8), z = Math.round(Math.sin(ang) * r * 8);
         const h = this.heightAt(x, z);
+        if (h <= SEA + 1) continue;
         const bio = this.biomeAt(x, z);
-        if (h > SEA + 1 && bio !== BIOME.MOUNTAINS) return { x: x + 0.5, y: h + 2, z: z + 0.5 };
+        if (bio === BIOME.MOUNTAINS) continue;
+        const spot = { x: x + 0.5, y: h + 2, z: z + 0.5 };
+        // ideal: open plains — return immediately
+        if (bio === BIOME.PLAINS) return spot;
+        // otherwise remember the first usable spot and keep looking for plains
+        if (!fallback) fallback = spot;
       }
     }
-    return { x: 0.5, y: this.heightAt(0, 0) + 2, z: 0.5 };
+    return fallback || { x: 0.5, y: this.heightAt(0, 0) + 2, z: 0.5 };
   }
 }
