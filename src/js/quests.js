@@ -270,7 +270,8 @@ export class Quests {
   update(dt) {
     // treasure pickup by walking up to a chest
     if (this.step === TREASURE) this._checkTreasures();
-    if (this.step === DONE) this._updateRepeat(dt);
+    // tick endless adventures (after the story) or any debug-started one
+    if (this.step === DONE || this.adv) this._updateRepeat(dt);
 
     const target = this._currentTarget();
     if (!target) { this.elHud.style.display = 'none'; return; }
@@ -285,9 +286,10 @@ export class Quests {
 
     let html = `<div class="q-obj">📜 ${this._objective()}</div>`;
     html += `<div class="q-nav">${arrow} <b>${target.name}</b> — ${Math.round(dist)}m</div>`;
-    const bossMob = this.step === BEAT_BOSS ? this.entities.findQuestMob('boss')
+    const bossMob = this.adv ? this._advBossMob()
+      : this.step === BEAT_BOSS ? this.entities.findQuestMob('boss')
       : this.step === BEAT_DRAGON ? this.entities.findQuestMob('dragon')
-      : this._advBossMob();
+      : null;
     if (bossMob) {
       const f = Math.max(0, bossMob.hp) / (bossMob.maxHp || 70);
       const label = this.step === BEAT_DRAGON ? 'Dragon' : enemyName(bossMob.type);
@@ -299,8 +301,17 @@ export class Quests {
   // ================= endless, never-repeating adventures =================
   _updateRepeat(dt) {
     if (this.adv) { this._tickAdventure(dt); return; }
+    if (this.step !== DONE) return;   // auto-spawn only in endless mode (post-story)
     this.repeatTimer -= dt;
     if (this.repeatTimer <= 0) this._startAdventure();
+  }
+
+  // debug / on-demand: instantly start a fresh random adventure (bound to G)
+  debugStartAdventure() {
+    if (this._dialogOpen) return;
+    if (this.origin.x === 0 && this.origin.z === 0) this.origin = { x: this.player.spawn.x, z: this.player.spawn.z };
+    if (this.adv) this._finishAdventure();
+    this._startAdventure();
   }
 
   _randSpot(minD, maxD) {
@@ -421,6 +432,7 @@ export class Quests {
   }
 
   _currentTarget() {
+    if (this.adv) return this._advTarget();
     switch (this.step) {
       case TALK_MOM: { const p = this.momPos; return { name: 'Mom', x: p.x, z: p.z }; }
       case FIND_BLADE: { const p = this.bladePos; return { name: 'Star Blade', x: p.x, z: p.z }; }
@@ -459,6 +471,7 @@ export class Quests {
     return best;
   }
   _objective() {
+    if (this.adv) return this._advObjective();
     switch (this.step) {
       case TALK_MOM: return 'Find Mom and talk to her';
       case FIND_BLADE: return 'Find the magic Star Blade';

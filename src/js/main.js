@@ -174,6 +174,7 @@ document.addEventListener('keydown', (e) => {
   if (ui.isOpen()) return;
   if (e.code === 'KeyE') { ui.open('inventory'); document.exitPointerLock(); }
   if (e.code === 'KeyF') { player.flying = !player.flying; ui.toast(player.flying ? '🕊️ Flying: ON — Space = up, Shift = down' : 'Flying: OFF'); }
+  if (e.code === 'KeyG') { quests.debugStartAdventure(); ui.toast('🎲 Starting a random adventure!'); }  // test/spawn an adventure now
   if (e.code === 'KeyR') rightClick();              // keyboard alternative for placement / use
   if (e.code === 'KeyB') { mouseDown[0] = true; swingT = 0; }  // keyboard alternative for mine / attack
   if (e.code === 'KeyM') { const m = audio.toggleMute(); ui.toast(m ? 'Sound muted' : 'Sound on'); }
