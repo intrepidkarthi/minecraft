@@ -44,6 +44,10 @@ function box(w, h, d, tex) {
 // file is missing/blocked, the figure stays — villagers are never invisible).
 const FAMILY = ['adyah', 'mom', 'dad', 'aarav'];
 const FAMILY_COLOR = { adyah: '#8e44ad', mom: '#c0392b', dad: '#2c3e50', aarav: '#16a085' };
+// Where the character art lives, relative to the page. Desktop (Electron) loads
+// src/index.html with assets one level up; a web build keeps assets/ alongside
+// index.html. Either way a missing file just falls back to a drawn figure.
+const ASSET_BASE = (typeof window !== 'undefined' && window.gameAPI && window.gameAPI.isElectron) ? '../assets/' : 'assets/';
 const charTexCache = new Map();
 let villagerSeq = 0;
 function drawFallbackChar(c, who) {
@@ -63,7 +67,7 @@ function familyTexture(who) {
   tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter;
   const img = new Image();
   img.onload = () => { c.clearRect(0, 0, 256, 256); c.drawImage(img, 0, 0, 256, 256); tex.needsUpdate = true; };
-  img.src = `../assets/characters/${who}_villager.png`;
+  img.src = `${ASSET_BASE}characters/${who}_villager.png`;
   charTexCache.set(who, tex);
   return tex;
 }
@@ -81,7 +85,7 @@ function monsterTexture(name) {
   tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter;
   const img = new Image();
   img.onload = () => { c.clearRect(0, 0, 256, 256); c.drawImage(img, 0, 0, 256, 256); tex.needsUpdate = true; };
-  img.src = `../assets/characters/monster_${name}.png`;
+  img.src = `${ASSET_BASE}characters/monster_${name}.png`;
   monsterTexCache.set(name, tex);
   return tex;
 }
