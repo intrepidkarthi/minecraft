@@ -69,11 +69,8 @@ export class Progression {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + 4);
       setTimeout(() => this.ui.toast(`❤️ Max HP ${this.player.maxHp}`), 700);
     }
-    const rows = Math.min(3, 1 + Math.floor(this.level / 5));
-    if (this.ui.mainRows !== rows) {
-      this.ui.mainRows = rows;
-      setTimeout(() => this.ui.toast(`✨ +9 inventory slots!`), 1400);
-    }
+    // Inventory is fully unlocked from the start — no slot gating by level.
+    this.ui.mainRows = 3;
   }
 
   unlockPerk(id) {
@@ -116,7 +113,7 @@ export class Progression {
     this.xp = d.xp || 0;
     if (Array.isArray(d.perks)) for (const id of d.perks) this.perks.add(id);
     this.player.maxHp = 20 + 2 * Math.floor(this.level / 5);
-    this.ui.mainRows = Math.min(3, 1 + Math.floor(this.level / 5));
+    this.ui.mainRows = 3;   // always fully unlocked
     this._applyPerks();
     this._refreshBar();
   }

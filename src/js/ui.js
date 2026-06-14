@@ -75,7 +75,7 @@ export class UI {
     this.onClose = null;
     this.onCraft = null;    // () => void  (set by main.js)
     this.world = null;
-    this.mainRows = 1;      // main-inventory rows unlocked (1..3); progression updates this
+    this.mainRows = 3;      // all main-inventory rows always available (no level gating)
     this.progression = null;
 
     this._buildHUD();
@@ -309,17 +309,12 @@ export class UI {
       }
     }
 
-    // player inventory section — only unlocked rows are slottable
+    // player inventory section — all rows are always available
     el('div', 'ptitle small', panel).textContent = '';
     const cap = 9 + this.mainRows * 9;
     const main = el('div', 'grid g9', panel);
     for (let i = 9; i < cap; i++) {
       this._slot(main, () => this.inv[i], (s) => { this.inv[i] = s; }, 'invmain');
-    }
-    // show locked rows as dim placeholders so the player knows more is coming
-    for (let i = cap; i < 36; i++) {
-      const d = el('div', 'slot locked', main);
-      d.title = 'Locked — level up to unlock more slots';
     }
     const hot = el('div', 'grid g9 hotrow', panel);
     for (let i = 0; i < 9; i++) {
