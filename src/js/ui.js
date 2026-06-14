@@ -547,6 +547,24 @@ export class UI {
       el('span', 'subtext', tx).textContent = hint;
     }
 
+    // Mouse controls
+    const mouseBox = el('div', 'helpsection', panel);
+    el('div', 'helphdr', mouseBox).textContent = '🖱️ Mouse Controls';
+    const mouseRows = [
+      ['Move mouse', 'Look around'],
+      ['Left click / hold', 'Mine blocks · attack monsters'],
+      ['Right click', 'Place block · use · eat'],
+      ['Scroll wheel', 'Cycle hotbar slots 1–9'],
+      ['Click the screen', 'Re-locks the mouse if it slips out']
+    ];
+    const mtbl = el('div', 'helptable', mouseBox);
+    for (const [k, v] of mouseRows) {
+      const r = el('div', 'helprow', mtbl);
+      el('b', null, r).textContent = k;
+      el('span', null, r).textContent = v;
+    }
+    el('div', 'hint', mouseBox).innerHTML = 'If the mouse ever stops looking around, just <b>click the screen</b> once to grab it back. <b>B</b> (mine) and <b>R</b> (place) work too if you’d rather use the keyboard.';
+
     // Full keybindings
     const keysBox = el('div', 'helpsection', panel);
     el('div', 'helphdr', keysBox).textContent = '⌨️ All Keys';
