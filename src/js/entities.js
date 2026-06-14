@@ -100,8 +100,9 @@ const MOB_DEFS = {
   chicken: { hp: 4, speed: 1.6, h: 0.7, hw: 0.25, drops: [['chicken', 1, 1], ['feather', 0, 1]] },
   // friendly people — wander the plains, never attack, drop nothing
   villager: { hp: 20, speed: 1.3, h: 1.92, hw: 0.32, friendly: true, drops: [] },
-  // quest boss — big, tough, chases the player; spawned only by the adventure
-  boss: { hp: 70, hostile: true, speed: 2.3, dmg: 4, h: 2.6, hw: 0.6, drops: [], boss: true }
+  // quest bosses — big, tough, chase the player; spawned only by the adventure
+  boss: { hp: 70, hostile: true, speed: 2.3, dmg: 4, h: 2.6, hw: 0.6, drops: [], boss: true },
+  dragon: { hp: 130, hostile: true, speed: 2.7, dmg: 5, h: 3.4, hw: 0.9, drops: [], boss: true }
 };
 
 function buildModel(type, opts = {}) {
@@ -151,12 +152,13 @@ function buildModel(type, opts = {}) {
     sprite.position.y = 0.95;
     g.add(sprite);
     g.userData.who = who;
-  } else if (type === 'boss') {
-    const monster = opts.monster || 'ogre';
+  } else if (type === 'boss' || type === 'dragon') {
+    const monster = opts.monster || (type === 'dragon' ? 'dragon' : 'ogre');
+    const big = type === 'dragon';
     const mat = new THREE.SpriteMaterial({ map: monsterTexture(monster), transparent: true, alphaTest: 0.4 });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(3.0, 3.2, 1);
-    sprite.position.y = 1.5;
+    sprite.scale.set(big ? 4.4 : 3.0, big ? 4.6 : 3.2, 1);
+    sprite.position.y = big ? 2.1 : 1.5;
     g.add(sprite);
     g.userData.monster = monster;
   } else if (type === 'creeper') {

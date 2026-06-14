@@ -1,13 +1,24 @@
-// quests.js — Adyah's first adventure: "The Lost Brother".
-// A small guided story: talk to Mom -> find the Star Blade -> beat the monster
-// -> rescue Aarav. Drives an objective HUD with a compass that points the way,
-// pops kid-friendly dialogue, and rewards completion.
+// quests.js — Adyah's adventure, a multi-chapter story that gives the game goals.
+//   Ch.1 "The Lost Brother": talk to Mom -> find the Star Blade -> beat the
+//        monster -> rescue Aarav.
+//   Ch.2 "Hidden Treasures": find Dad's 3 buried treasure chests (loot!).
+//   Ch.3 "The Dragon": defeat the dragon with the Star Blade for the finale.
+// A compass HUD always points the way and boss fights show a health bar.
 "use strict";
+import { B } from './blocks.js';
 
-// step ids
-const TALK_MOM = 0, FIND_BLADE = 1, BEAT_BOSS = 2, TALK_AARAV = 3, DONE = 4;
+const TALK_MOM = 0, FIND_BLADE = 1, BEAT_BOSS = 2, TALK_AARAV = 3,
+      TREASURE = 4, BEAT_DRAGON = 5, DONE = 6;
 
 const ARROWS = ['⬆️', '↗️', '➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️'];
+
+// treasure chest locations (offsets from spawn) + the loot inside each
+const T_OFFS = [{ x: 38, z: 30 }, { x: -44, z: -12 }, { x: 16, z: -50 }];
+const T_LOOT = [
+  [{ id: 'diamond', count: 4 }, { id: 'apple', count: 6 }, { id: 'iron_ingot', count: 8 }],
+  [{ id: 'gold_ingot', count: 10 }, { id: 'diamond_pickaxe', count: 1 }, { id: 'coal', count: 12 }],
+  [{ id: 'diamond', count: 6 }, { id: 'diamond_sword', count: 1 }, { id: 'steak', count: 6 }]
+];
 
 export class Quests {
   constructor({ player, entities, ui, world, audio, progression, lockPointer }) {
@@ -15,22 +26,24 @@ export class Quests {
     this.world = world; this.audio = audio; this.progression = progression;
     this.lockPointer = lockPointer || (() => {});
     this.step = TALK_MOM;
-    this.started = false;          // has the very first Mom encounter happened
-    this.origin = { x: 0, z: 0 };  // quest anchored at the player's spawn
+    this.started = false;
+    this.origin = { x: 0, z: 0 };
+    this.opened = new Set();   // treasure keys already collected
+    this._tpos = null;         // cached treasure positions [{x,y,z,key,i}]
     this._dialogOpen = false;
     this._buildDom();
   }
 
-  // ---- target positions (x,z only), anchored to spawn so they're reachable ----
-  _off(off) { return { x: Math.round(this.origin.x + off.x), z: Math.round(this.origin.z + off.z) }; }
+  // ---- positions, anchored to spawn so they're always reachable ----
+  _off(o) { return { x: Math.round(this.origin.x + o.x), z: Math.round(this.origin.z + o.z) }; }
   get momPos() { return this._off({ x: 9, z: 7 }); }
   get bladePos() { return this._off({ x: 44, z: -16 }); }
   get bossPos() { return this._off({ x: -24, z: 46 }); }
   get aaravPos() { return this._off({ x: -20, z: 49 }); }
+  get dragonPos() { return this._off({ x: 62, z: -38 }); }
 
-  // generate the terrain around a target so spawned entities have ground to
-  // stand on (distant chunks aren't loaded yet, so getBlock would be air),
-  // then return a safe standing height.
+  // generate terrain around a target (distant chunks aren't loaded), return a
+  // safe standing height on top of the ground.
   _ground(x, z) {
     const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.world.ensureChunk(cx + dx, cz + dz);
@@ -42,27 +55,29 @@ export class Quests {
     this.origin = { x: spawn.x, z: spawn.z };
     this.step = TALK_MOM;
     this.started = false;
+    this.opened = new Set();
     this._spawnMom();
     this._refreshHud();
   }
 
   resume() {
     if (this.origin.x === 0 && this.origin.z === 0) this.origin = { x: this.player.spawn.x, z: this.player.spawn.z };
-    // mobs aren't persisted, so re-create whatever the current step needs.
     if (this.step === TALK_MOM) this._spawnMom();
     else if (this.step === FIND_BLADE) this._ensureBlade();
     else if (this.step === BEAT_BOSS) { this._ensureBlade(false); this._spawnBossAndAarav(); }
-    else if (this.step === TALK_AARAV) this._spawnAarav(true);
+    else if (this.step === TALK_AARAV) this._spawnAarav();
+    else if (this.step === TREASURE) this._placeTreasures();
+    else if (this.step === BEAT_DRAGON) this._spawnDragon();
     this._refreshHud();
   }
 
+  // ---- spawners ----
   _spawnMom() {
     if (this.entities.findQuestMob('mom')) return;
     const p = this.momPos, y = this._ground(p.x, p.z);
     this.entities.spawnMob('villager', p.x + 0.5, y, p.z + 0.5, { who: 'mom', quest: 'mom' });
   }
   _ensureBlade(drop = true) {
-    // the Star Blade drop persists in saves; only place it if it's truly missing
     const has = this.entities.items.some(it => it.stack && it.stack.id === 'star_blade')
       || this.ui.inv.some(s => s && s.id === 'star_blade');
     if (!has && drop) {
@@ -75,12 +90,30 @@ export class Quests {
       const b = this.bossPos, y = this._ground(b.x, b.z);
       this.entities.spawnMob('boss', b.x + 0.5, y, b.z + 0.5, { monster: 'ogre', quest: 'boss' });
     }
-    this._spawnAarav(false);
+    this._spawnAarav();
   }
-  _spawnAarav(freed) {
+  _spawnAarav() {
     if (this.entities.findQuestMob('aarav')) return;
     const a = this.aaravPos, y = this._ground(a.x, a.z);
     this.entities.spawnMob('villager', a.x + 0.5, y, a.z + 0.5, { who: 'aarav', quest: 'aarav' });
+  }
+  _spawnDragon() {
+    if (this.entities.findQuestMob('dragon')) return;
+    const d = this.dragonPos, y = this._ground(d.x, d.z);
+    this.entities.spawnMob('dragon', d.x + 0.5, y, d.z + 0.5, { monster: 'dragon', quest: 'dragon' });
+  }
+
+  // place a visible chest marker at each not-yet-collected treasure spot
+  _placeTreasures() {
+    this._tpos = [];
+    T_OFFS.forEach((o, i) => {
+      const p = this._off(o), y = this._ground(p.x, p.z);
+      const key = p.x + ',' + p.z;
+      this._tpos.push({ x: p.x, y, z: p.z, key, i });
+      if (!this.opened.has(key) && this.world.getBlock(p.x, y, p.z) !== B.CHEST) {
+        this.world.setBlock(p.x, y, p.z, B.CHEST);
+      }
+    });
   }
 
   // ---- interactions ----
@@ -94,25 +127,24 @@ export class Quests {
           "Your little brother Aarav wandered off… and a grumpy monster stole the magic Star Blade!",
           "Please — find the Star Blade, defeat that monster, and bring Aarav safely home.",
           "Follow the compass at the top of your screen. Be brave! 💜"
-        ], () => { this.step = FIND_BLADE; this.started = true; this._ensureBlade(); this._toast('New quest: The Lost Brother'); this._refreshHud(); });
+        ], () => { this.step = FIND_BLADE; this.started = true; this._ensureBlade(); this._toast('New quest: The Lost Brother'); });
       } else {
-        this._dialog('Mom', ["Be careful out there, Adyah. Bring Aarav home!"]);
+        this._dialog('Mom', ["You're doing wonderfully, Adyah. Keep going! 💜"]);
       }
       return;
     }
     if (who === 'aarav') {
       if (this.step === TALK_AARAV) {
         this._dialog('Aarav', [
-          "Adyah! You found me! 🥹",
-          "That monster was so scary… but you beat it!",
-          "Let's go home together. You're the best big brother ever!"
-        ], () => this._complete());
+          "Adyah! You found me! 🥹 You beat that scary monster!",
+          "Guess what — Dad buried THREE treasure chests for us to find!",
+          "Follow the compass to dig them up. Let's go treasure hunting! 🗺️"
+        ], () => this._startTreasure());
       } else {
         this._dialog('Aarav', ["Help, big brother! Beat the monster first — then I can come out!"]);
       }
       return;
     }
-    // any other family member — a friendly hello
     this._dialog('Villager', ["Hello, Adyah! Lovely day to build something. 🙂"]);
   }
 
@@ -123,7 +155,7 @@ export class Quests {
         "✨ You found the Star Blade! It hums with starlight.",
         "It's far stronger than any sword. Now go save Aarav!",
         "The compass will lead you to the monster."
-      ], () => { this.step = BEAT_BOSS; this._spawnBossAndAarav(); this._refreshHud(); });
+      ], () => { this.step = BEAT_BOSS; this._spawnBossAndAarav(); });
     }
   }
 
@@ -132,24 +164,44 @@ export class Quests {
       this.step = TALK_AARAV;
       this.audio.play('levelup');
       this._toast('💥 The monster is defeated! Go talk to Aarav.');
-      this._refreshHud();
+    } else if (type === 'dragon' && this.step === BEAT_DRAGON) {
+      this._finale();
     }
   }
 
-  _complete() {
-    this.step = DONE;
-    if (this.progression && this.progression.addXp) this.progression.addXp(120);
-    this.audio.play('levelup');
-    this._dialog('🏆 Quest Complete!', [
-      "The Lost Brother — finished!",
-      "You found the Star Blade, beat the monster, and brought Aarav home. 🎉",
-      "Keep the Star Blade — you earned it. More adventures await!"
-    ]);
-    this._refreshHud();
+  _startTreasure() {
+    this.step = TREASURE;
+    this._placeTreasures();
+    this._toast('🗺️ New quest: find Dad\'s 3 hidden treasures!');
   }
 
-  // ---- per-frame HUD ----
+  _startDragon() {
+    this.step = BEAT_DRAGON;
+    this._spawnDragon();
+    this.audio.play('levelup');
+    this._dialog('⚠️ A Dragon!', [
+      "A huge dragon has appeared over the land! 🐉",
+      "Only the Star Blade can defeat it. You can do this, Adyah!",
+      "Follow the compass — and watch its health bar!"
+    ]);
+  }
+
+  _finale() {
+    this.step = DONE;
+    if (this.progression && this.progression.addXp) this.progression.addXp(250);
+    this.audio.play('levelup');
+    this._dialog('🏆 Hero of the Land!', [
+      "You did it, Adyah — the dragon is defeated! 🐉⚔️",
+      "You found the Star Blade, rescued Aarav, and dug up Dad's treasures.",
+      "Your whole family is so proud of you. Keep building your world! 🎉"
+    ]);
+  }
+
+  // ---- per-frame ----
   update(dt) {
+    // treasure pickup by walking up to a chest
+    if (this.step === TREASURE) this._checkTreasures();
+
     if (this.step === DONE) { this.elHud.style.display = 'none'; return; }
     const target = this._currentTarget();
     if (!target) { this.elHud.style.display = 'none'; return; }
@@ -158,21 +210,37 @@ export class Quests {
     const px = this.player.pos.x, pz = this.player.pos.z;
     const dx = target.x - px, dz = target.z - pz;
     const dist = Math.hypot(dx, dz);
-    const bearing = Math.atan2(dx, -dz);
-    let rel = bearing + this.player.yaw;
+    let rel = Math.atan2(dx, -dz) + this.player.yaw;
     rel = ((rel % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
     const arrow = dist < 3 ? '📍' : ARROWS[((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8];
 
     let html = `<div class="q-obj">📜 ${this._objective()}</div>`;
     html += `<div class="q-nav">${arrow} <b>${target.name}</b> — ${Math.round(dist)}m</div>`;
-    if (this.step === BEAT_BOSS) {
-      const boss = this.entities.findQuestMob('boss');
-      if (boss) {
-        const f = Math.max(0, boss.hp) / (boss.maxHp || 70);
-        html += `<div class="q-boss"><span>Monster</span><div class="q-bar"><i style="width:${Math.round(f * 100)}%"></i></div></div>`;
-      }
+    const bossMob = this.step === BEAT_BOSS ? this.entities.findQuestMob('boss')
+      : this.step === BEAT_DRAGON ? this.entities.findQuestMob('dragon') : null;
+    if (bossMob) {
+      const f = Math.max(0, bossMob.hp) / (bossMob.maxHp || 70);
+      html += `<div class="q-boss"><span>${this.step === BEAT_DRAGON ? 'Dragon' : 'Monster'}</span><div class="q-bar"><i style="width:${Math.round(f * 100)}%"></i></div></div>`;
     }
     this.elHud.innerHTML = html;
+  }
+
+  _checkTreasures() {
+    if (!this._tpos) this._placeTreasures();
+    const px = this.player.pos.x, pz = this.player.pos.z;
+    for (const t of this._tpos) {
+      if (this.opened.has(t.key)) continue;
+      if (Math.hypot(t.x + 0.5 - px, t.z + 0.5 - pz) < 2.6) {
+        this.opened.add(t.key);
+        if (this.world.getBlock(t.x, t.y, t.z) === B.CHEST) this.world.setBlock(t.x, t.y, t.z, B.AIR);
+        for (const loot of T_LOOT[t.i]) this.ui.addToInventory({ id: loot.id, count: loot.count });
+        if (this.entities.particles) this.entities.particles.burst(t.x + 0.5, t.y + 0.5, t.z + 0.5, 0xffe14d, 18);
+        this.audio.play('levelup');
+        this._toast(`🎁 Treasure found! (${this.opened.size}/3)`);
+        if (this.opened.size >= T_OFFS.length) this._startDragon();
+        break;
+      }
+    }
   }
 
   _currentTarget() {
@@ -181,8 +249,20 @@ export class Quests {
       case FIND_BLADE: { const p = this.bladePos; return { name: 'Star Blade', x: p.x, z: p.z }; }
       case BEAT_BOSS: { const b = this.entities.findQuestMob('boss'); const p = b ? b.pos : this.bossPos; return { name: 'Monster', x: p.x, z: p.z }; }
       case TALK_AARAV: { const a = this.entities.findQuestMob('aarav'); const p = a ? a.pos : this.aaravPos; return { name: 'Aarav', x: p.x, z: p.z }; }
+      case TREASURE: { const t = this._nearestTreasure(); return t ? { name: 'Treasure', x: t.x, z: t.z } : null; }
+      case BEAT_DRAGON: { const d = this.entities.findQuestMob('dragon'); const p = d ? d.pos : this.dragonPos; return { name: 'Dragon', x: p.x, z: p.z }; }
       default: return null;
     }
+  }
+  _nearestTreasure() {
+    if (!this._tpos) this._placeTreasures();
+    let best = null, bd = Infinity;
+    for (const t of this._tpos) {
+      if (this.opened.has(t.key)) continue;
+      const dd = Math.hypot(t.x - this.player.pos.x, t.z - this.player.pos.z);
+      if (dd < bd) { bd = dd; best = t; }
+    }
+    return best;
   }
   _objective() {
     switch (this.step) {
@@ -190,13 +270,14 @@ export class Quests {
       case FIND_BLADE: return 'Find the magic Star Blade';
       case BEAT_BOSS: return 'Defeat the monster guarding Aarav';
       case TALK_AARAV: return 'Talk to Aarav and bring him home';
+      case TREASURE: return `Find Dad's hidden treasures (${this.opened.size}/3)`;
+      case BEAT_DRAGON: return 'Defeat the Dragon with the Star Blade!';
       default: return '';
     }
   }
 
   // ---- dialogue + toast ----
   blocking() { return this._dialogOpen; }
-
   _dialog(name, lines, onDone) {
     this._dialogOpen = true;
     let i = 0;
@@ -247,15 +328,15 @@ export class Quests {
     this.elDlgHint = dlg.querySelector('.dialog-hint');
     dlg.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); if (this._dlgAdvance) this._dlgAdvance(); });
   }
-
-  _refreshHud() { /* update() repaints every frame; nothing needed here */ }
+  _refreshHud() { /* update() repaints every frame */ }
 
   // ---- save ----
-  serialize() { return { step: this.step, started: this.started, origin: this.origin }; }
+  serialize() { return { step: this.step, started: this.started, origin: this.origin, opened: [...this.opened] }; }
   deserialize(d) {
     if (!d) return;
     this.step = d.step != null ? d.step : TALK_MOM;
     this.started = !!d.started;
     if (d.origin) this.origin = d.origin;
+    if (Array.isArray(d.opened)) this.opened = new Set(d.opened);
   }
 }
