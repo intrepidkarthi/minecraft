@@ -170,17 +170,19 @@ export class WorldGen {
 
       let treeChance = 0, kind = 'oak';
       switch (bio) {
-        case BIOME.FOREST: treeChance = 1 / 42; kind = r2 < 0.85 ? 'oak' : 'birch'; break;
-        case BIOME.BIRCH: treeChance = 1 / 46; kind = r2 < 0.7 ? 'birch' : 'oak'; break;
-        case BIOME.PLAINS: treeChance = 1 / 290; kind = 'oak'; break;
-        case BIOME.TAIGA: treeChance = 1 / 48; kind = 'spruce'; break;
+        // Tree canopies are 5×5, so even "1/42" reads as a closed forest. These
+        // lower rates make woods scattered and very buildable, with open ground.
+        case BIOME.FOREST: treeChance = 1 / 110; kind = r2 < 0.85 ? 'oak' : 'birch'; break;
+        case BIOME.BIRCH: treeChance = 1 / 120; kind = r2 < 0.7 ? 'birch' : 'oak'; break;
+        case BIOME.PLAINS: treeChance = 1 / 420; kind = 'oak'; break;
+        case BIOME.TAIGA: treeChance = 1 / 120; kind = 'spruce'; break;
         case BIOME.SNOWY: treeChance = 1 / 220; kind = 'spruce'; break;
         case BIOME.MOUNTAINS: treeChance = h < 86 ? 1 / 120 : 0; kind = 'spruce'; break;
         case BIOME.DESERT: treeChance = 1 / 160; kind = 'cactus'; break;
       }
       // keep an open clearing right around spawn so the first view is wide open
       const sc = this.spawnClear;
-      const nearSpawn = sc && Math.abs(wx - sc.x) < 11 && Math.abs(wz - sc.z) < 11;
+      const nearSpawn = sc && Math.abs(wx - sc.x) < 20 && Math.abs(wz - sc.z) < 20;
       if (r < treeChance && !nearSpawn) {
         this.tree(kind, wx, h, wz, put, hash2(this.seed ^ 0x9999, wx, wz));
         continue;

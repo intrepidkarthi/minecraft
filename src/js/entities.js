@@ -49,7 +49,9 @@ const MOB_DEFS = {
   pig: { hp: 10, speed: 1.8, h: 0.9, hw: 0.4, drops: [['porkchop', 1, 2]] },
   cow: { hp: 10, speed: 1.6, h: 1.35, hw: 0.45, drops: [['beef', 1, 2]] },
   sheep: { hp: 8, speed: 1.6, h: 1.25, hw: 0.42, drops: [[B.WOOL, 1, 1]] },
-  chicken: { hp: 4, speed: 1.6, h: 0.7, hw: 0.25, drops: [['chicken', 1, 1], ['feather', 0, 1]] }
+  chicken: { hp: 4, speed: 1.6, h: 0.7, hw: 0.25, drops: [['chicken', 1, 1], ['feather', 0, 1]] },
+  // friendly people — wander the plains, never attack, drop nothing
+  villager: { hp: 20, speed: 1.3, h: 1.92, hw: 0.32, friendly: true, drops: [] }
 };
 
 function buildModel(type) {
@@ -85,6 +87,38 @@ function buildModel(type) {
       arm.position.set(s * 6 * px, 23 * px, 0);
       if (type === 'zombie') arm.rotation.x = Math.PI / 2;
       g.add(arm); parts['arm' + s] = arm;
+      const leg = box(4 * px, 12 * px, 4 * px, legT);
+      leg.geometry.translate(0, -6 * px, 0);
+      leg.position.set(s * 2 * px, 12 * px, 0);
+      g.add(leg); parts['leg' + s] = leg;
+    }
+  } else if (type === 'villager') {
+    const skin = 0xc89a78, robe = 0x8a5a34, trim = 0x5e3d22;
+    const headT = face('villager_head', skin);
+    const faceT = face('villager_face', skin, (c) => {
+      c.fillStyle = '#3a2a1a';                       // brow
+      c.fillRect(3, 5, 4, 1); c.fillRect(9, 5, 4, 1);
+      c.fillStyle = '#ffffff'; c.fillRect(4, 6, 2, 2); c.fillRect(10, 6, 2, 2);
+      c.fillStyle = '#2a4a8a'; c.fillRect(4, 7, 1, 1); c.fillRect(11, 7, 1, 1);
+      c.fillStyle = '#a87a58';                       // big nose
+      c.fillRect(7, 7, 2, 6);
+      c.fillStyle = '#7a5238'; c.fillRect(6, 13, 4, 1); // mouth
+    });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(8 * px, 8 * px, 8 * px),
+      [headT, headT, headT, headT, headT, faceT].map(t => new THREE.MeshBasicMaterial({ map: t })));
+    head.position.y = 28 * px; g.add(head); parts.head = head;
+    const body = box(8 * px, 12 * px, 4 * px, face('villager_body', robe)); body.position.y = 18 * px; g.add(body);
+    // arms clasped in front
+    const armT = face('villager_arm', trim);
+    for (const s of [-1, 1]) {
+      const arm = box(4 * px, 11 * px, 4 * px, armT);
+      arm.geometry.translate(0, -4 * px, 0);
+      arm.position.set(s * 5 * px, 22 * px, 1.5 * px);
+      arm.rotation.x = -1.2;
+      g.add(arm); parts['arm' + s] = arm;
+    }
+    const legT = face('villager_leg', trim);
+    for (const s of [-1, 1]) {
       const leg = box(4 * px, 12 * px, 4 * px, legT);
       leg.geometry.translate(0, -6 * px, 0);
       leg.position.set(s * 2 * px, 12 * px, 0);
@@ -288,6 +322,19 @@ export class Entities {
         const type = ['pig', 'cow', 'sheep', 'chicken'][(this.rng() * 4) | 0];
         const n = 2 + (this.rng() * 2 | 0);
         for (let i = 0; i < n; i++) this.spawnMob(type, x + 0.5 + (this.rng() - .5) * 3, y + 1, z + 0.5 + (this.rng() - .5) * 3);
+      }
+    }
+    // friendly villagers wander the plains by day — keep a few around and close
+    // enough that the player always has people to find.
+    const villagers = this.mobs.filter(m => m.type === 'villager').length;
+    if (!isNight && villagers < 5) {
+      const ang = this.rng() * Math.PI * 2, d = 12 + this.rng() * 22;
+      const x = Math.floor(p.pos.x + Math.cos(ang) * d), z = Math.floor(p.pos.z + Math.sin(ang) * d);
+      const y = this.world.surfaceY(x, z) + 1;
+      const g = this.world.getBlock(x, y - 1, z);
+      if (y > 1 && (g === B.GRASS || g === B.SAND) && this._effLight(x, y, z) > 8) {
+        const n = 1 + (this.rng() * 2 | 0);
+        for (let i = 0; i < n; i++) this.spawnMob('villager', x + 0.5 + (this.rng() - .5) * 3, y, z + 0.5 + (this.rng() - .5) * 3);
       }
     }
   }
@@ -553,6 +600,8 @@ export class Entities {
 
   _hurtMob(m, dmg, kb) {
     if (m.dying > 0) return;
+    // friendly villagers can't be killed — they just startle and scurry off
+    if (m.def.friendly) { m.fleeT = 5; this.audio.play('animalHurt'); return; }
     m.hp -= dmg;
     m.hurtT = 0.35;
     if (kb) { m.vel.x += kb.x * 7; m.vel.z += kb.z * 7; m.vel.y = 5; }
