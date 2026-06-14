@@ -6,11 +6,70 @@
 // A compass HUD always points the way and boss fights show a health bar.
 "use strict";
 import { B } from './blocks.js';
+import { ENEMY_IDS, enemiesByTier, enemyKind, enemyName } from './entities.js';
 
 const TALK_MOM = 0, FIND_BLADE = 1, BEAT_BOSS = 2, TALK_AARAV = 3,
       TREASURE = 4, BEAT_DRAGON = 5, DONE = 6;
 
 const ARROWS = ['⬆️', '↗️', '➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️'];
+
+// ---- endless adventure content: 10 templates × 30 storylines × 24 enemies ----
+// Each run draws a fresh template + storyline + randomly-chosen enemies, so no
+// two adventures feel the same.
+const ADVENTURES = [
+  { id: 'hunt',     title: 'Monster Hunt',   kind: 'boss',      tier: 'boss' },
+  { id: 'horde',    title: 'The Horde',      kind: 'horde',     tier: 'small', count: 5 },
+  { id: 'warband',  title: 'The Warband',    kind: 'horde',     tier: 'mid',   count: 4 },
+  { id: 'treasure', title: 'Lost Treasure',  kind: 'treasure' },
+  { id: 'trail',    title: 'Treasure Trail', kind: 'treasures3' },
+  { id: 'rescue',   title: 'The Rescue',     kind: 'rescue',    tier: 'mid',   count: 2 },
+  { id: 'overlord', title: 'The Overlord',   kind: 'overlord',  tier: 'small', count: 3 },
+  { id: 'siege',    title: 'Defend the Land', kind: 'survive',  tier: 'small', duration: 28 },
+  { id: 'gauntlet', title: 'The Gauntlet',   kind: 'gauntlet',  tier: 'mid',   count: 3 },
+  { id: 'beastpack', title: 'Beast Pack',    kind: 'horde',     enemyKind: 'beast', count: 4 }
+];
+
+const STORYLINES = [
+  "A shadow fell over the village last night…",
+  "Aarav heard strange growls coming from the hills.",
+  "Mom found mysterious footprints near the garden.",
+  "Dad says something has been stealing the crops.",
+  "A traveler ran into town shouting about monsters.",
+  "The well water turned strange — something lurks nearby.",
+  "Bright eyes were seen glowing in the dark woods.",
+  "An old map fell from the sky with an X on it.",
+  "The village bell rang — danger is near!",
+  "A cold wind carries the smell of trouble.",
+  "Birds fled the forest all at once this morning.",
+  "A glittering trail leads away from the village.",
+  "Strange tracks circle the edge of the plains.",
+  "Aarav's pet went missing past the hills.",
+  "A rumble shook the ground beneath the meadow.",
+  "Smoke rises from somewhere beyond the trees.",
+  "A friendly villager needs a brave hero's help.",
+  "Treasure hunters whisper of riches buried nearby.",
+  "The stars formed a strange pattern over the ridge.",
+  "A dropped coin pouch hints at hidden loot.",
+  "Howls echo from the valley after dark.",
+  "Something big left a crater in the field.",
+  "Dad lost his lucky tools out in the wild.",
+  "A scared traveler points toward the danger.",
+  "The ground glitters where a chest may lie buried.",
+  "Monsters were spotted gathering near the river.",
+  "A magic chest is said to appear for the brave.",
+  "The village elders ask for Adyah's courage again.",
+  "An ancient foe has awoken from its slumber.",
+  "Adventure calls — and only you can answer it!"
+];
+
+// draw-without-replacement bag so picks don't repeat until the pool empties
+function bagDraw(bag, items) {
+  if (bag.length === 0) {
+    bag.push(...items.map((_, i) => i));
+    for (let i = bag.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [bag[i], bag[j]] = [bag[j], bag[i]]; }
+  }
+  return bag.pop();
+}
 
 // treasure chest locations (offsets from spawn) + the loot inside each
 const T_OFFS = [{ x: 38, z: 30 }, { x: -44, z: -12 }, { x: 16, z: -50 }];
@@ -30,10 +89,12 @@ export class Quests {
     this.origin = { x: 0, z: 0 };
     this.opened = new Set();   // treasure keys already collected
     this._tpos = null;         // cached treasure positions [{x,y,z,key,i}]
-    // endless mini-adventures after the main story is done
-    this.repeat = null;        // active repeatable adventure, or null
+    // endless, never-repeating mini-adventures after the main story is done
+    this.adv = null;           // active adventure object, or null
     this.repeatTimer = 0;      // seconds until the next adventure appears
     this.repeatCount = 0;
+    this._advBag = [];         // shuffle bags so templates/stories don't repeat
+    this._storyBag = [];
     this._dialogOpen = false;
     this._buildDom();
   }
@@ -72,7 +133,7 @@ export class Quests {
     else if (this.step === TALK_AARAV) this._spawnAarav();
     else if (this.step === TREASURE) this._placeTreasures();
     else if (this.step === BEAT_DRAGON) this._spawnDragon();
-    else if (this.step === DONE) { this.repeat = null; this.repeatTimer = 40; }   // resume endless mode
+    else if (this.step === DONE) { this.adv = null; this.repeatTimer = 40; }   // resume endless mode
     this._refreshHud();
   }
 
@@ -171,9 +232,8 @@ export class Quests {
       this._toast('💥 The monster is defeated! Go talk to Aarav.');
     } else if (type === 'dragon' && this.step === BEAT_DRAGON) {
       this._finale();
-    } else if (type === 'rboss' && this.repeat && this.repeat.type === 'hunt') {
-      this._completeRepeat();
     }
+    // endless-adventure kills are detected by polling in _tickAdventure
   }
 
   _startTreasure() {
@@ -227,53 +287,119 @@ export class Quests {
     html += `<div class="q-nav">${arrow} <b>${target.name}</b> — ${Math.round(dist)}m</div>`;
     const bossMob = this.step === BEAT_BOSS ? this.entities.findQuestMob('boss')
       : this.step === BEAT_DRAGON ? this.entities.findQuestMob('dragon')
-      : (this.repeat && this.repeat.type === 'hunt') ? this.entities.findQuestMob('rboss') : null;
+      : this._advBossMob();
     if (bossMob) {
       const f = Math.max(0, bossMob.hp) / (bossMob.maxHp || 70);
-      html += `<div class="q-boss"><span>${this.step === BEAT_DRAGON ? 'Dragon' : 'Monster'}</span><div class="q-bar"><i style="width:${Math.round(f * 100)}%"></i></div></div>`;
+      const label = this.step === BEAT_DRAGON ? 'Dragon' : enemyName(bossMob.type);
+      html += `<div class="q-boss"><span>${label}</span><div class="q-bar"><i style="width:${Math.round(f * 100)}%"></i></div></div>`;
     }
     this.elHud.innerHTML = html;
   }
 
-  // ---- endless mini-adventures (after the main story) ----
+  // ================= endless, never-repeating adventures =================
   _updateRepeat(dt) {
-    if (this.repeat) {
-      if (this.repeat.type === 'treasure') {
-        const dx = this.repeat.pos.x + 0.5 - this.player.pos.x, dz = this.repeat.pos.z + 0.5 - this.player.pos.z;
-        if (Math.hypot(dx, dz) < 2.8) this._completeRepeat();
-      }
-      return; // hunt completion comes via onMobKill('rboss')
-    }
+    if (this.adv) { this._tickAdventure(dt); return; }
     this.repeatTimer -= dt;
-    if (this.repeatTimer <= 0) this._startRepeat();
+    if (this.repeatTimer <= 0) this._startAdventure();
   }
-  _startRepeat() {
-    this.repeatCount++;
-    const ang = Math.random() * Math.PI * 2, d = 45 + Math.random() * 35;
+
+  _randSpot(minD, maxD) {
+    const ang = Math.random() * Math.PI * 2, d = minD + Math.random() * (maxD - minD);
     const x = Math.round(this.origin.x + Math.cos(ang) * d), z = Math.round(this.origin.z + Math.sin(ang) * d);
-    const y = this._ground(x, z);
-    if (this.repeatCount % 2 === 1) {
-      const monsters = ['ogre', 'demon', 'slimeking', 'alien'];
-      const monster = monsters[this.repeatCount % monsters.length];
-      this.entities.spawnMob('boss', x + 0.5, y, z + 0.5, { monster, quest: 'rboss' });
-      this.repeat = { type: 'hunt', pos: { x, z }, monster };
-      this._toast('⚔️ A wild monster appeared! Follow the compass.');
-    } else {
-      this.repeat = { type: 'treasure', pos: { x, z } };
-      this._toast('🗺️ A new treasure is hidden nearby — follow the compass!');
-    }
-    this.audio.play('levelup');
+    return { x, z };
   }
-  _completeRepeat() {
-    const hunt = this.repeat.type === 'hunt';
-    if (this.progression && this.progression.addXp) this.progression.addXp(hunt ? 80 : 50);
-    const loot = hunt ? [{ id: 'diamond', count: 2 }, { id: 'gold_ingot', count: 4 }]
-                      : [{ id: 'diamond', count: 3 }, { id: 'apple', count: 4 }];
-    for (const l of loot) this.ui.addToInventory({ id: l.id, count: l.count });
+  _pickEnemies(tpl, n) {
+    let pool = tpl.enemyKind ? ENEMY_IDS.filter(id => enemyKind(id) === tpl.enemyKind)
+             : tpl.tier ? enemiesByTier(tpl.tier) : ENEMY_IDS;
+    if (!pool.length) pool = ENEMY_IDS;
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(pool[(Math.random() * pool.length) | 0]);
+    return out;
+  }
+  _spawnEnemy(id, spot, spread = 0) {
+    const x = spot.x + (Math.random() - 0.5) * spread, z = spot.z + (Math.random() - 0.5) * spread;
+    const y = this._ground(Math.round(x), Math.round(z));
+    return this.entities.spawnMob(id, x + 0.5, y, z + 0.5, { quest: 'aenemy' });
+  }
+  _livingEnemies() { return this.entities.mobs.filter(m => m.quest === 'aenemy' && m.dying <= 0); }
+
+  _startAdventure() {
+    this.repeatCount++;
+    const tpl = ADVENTURES[bagDraw(this._advBag, ADVENTURES)];
+    const story = STORYLINES[bagDraw(this._storyBag, STORYLINES)];
+    const spot = this._randSpot(40, 80);
+    const adv = { tpl, story, kind: tpl.kind, pos: spot, spawned: 0, guardsCleared: false };
+
+    if (tpl.kind === 'boss') {
+      const id = this._pickEnemies({ tier: 'boss' }, 1)[0];
+      adv.bossId = id; adv.bossName = enemyName(id);
+      this._spawnEnemy(id, spot); adv.spawned = 1;
+    } else if (tpl.kind === 'horde' || tpl.kind === 'overlord') {
+      const list = this._pickEnemies(tpl, tpl.count);
+      for (const id of list) this._spawnEnemy(id, spot, 6);
+      adv.spawned = list.length; adv.enemyName = enemyName(list[0]);
+      if (tpl.kind === 'overlord') { const bid = this._pickEnemies({ tier: 'boss' }, 1)[0]; this._spawnEnemy(bid, spot); adv.spawned++; adv.bossName = enemyName(bid); }
+    } else if (tpl.kind === 'gauntlet') {
+      adv.queue = this._pickEnemies(tpl, tpl.count);
+      this._spawnEnemy(adv.queue.shift(), spot); adv.spawned = 1;
+    } else if (tpl.kind === 'rescue') {
+      const list = this._pickEnemies(tpl, tpl.count);
+      for (const id of list) this._spawnEnemy(id, spot, 5);
+      adv.spawned = list.length;
+      const y = this._ground(spot.x, spot.z);
+      this.entities.spawnMob('villager', spot.x + 0.5, y, spot.z + 0.5, { who: 'aarav', quest: 'alost' });
+    } else if (tpl.kind === 'survive') {
+      adv.surviveT = tpl.duration; adv.waveT = 0;
+    } else if (tpl.kind === 'treasures3') {
+      adv.spots = [this._randSpot(35, 60), this._randSpot(45, 75), this._randSpot(55, 90)];
+      adv.found = 0;
+    }
+    // treasure: nothing to spawn, just reach adv.pos
+
+    this.adv = adv;
     this.audio.play('levelup');
-    this._toast(hunt ? '🏅 Monster defeated! Reward collected.' : '🎁 Treasure collected!');
-    this.repeat = null;
-    this.repeatTimer = 50 + Math.random() * 30;   // next adventure in ~1 minute
+    this._dialog(`✨ New Adventure: ${tpl.title}`, [story, this._objective()]);
+  }
+
+  _tickAdventure(dt) {
+    const a = this.adv, k = a.kind;
+    if (k === 'treasure') {
+      if (this._near(a.pos, 2.8)) return this._finishAdventure();
+    } else if (k === 'treasures3') {
+      const s = a.spots[a.found];
+      if (s && this._near(s, 2.8)) { a.found++; if (a.found >= a.spots.length) return this._finishAdventure(); this._toast(`🎁 Treasure ${a.found}/${a.spots.length}!`); this.audio.play('levelup'); }
+    } else if (k === 'survive') {
+      a.surviveT -= dt; a.waveT -= dt;
+      if (a.waveT <= 0 && a.surviveT > 3) { a.waveT = 6; for (const id of this._pickEnemies(a.tpl, 2)) this._spawnEnemy(id, a.pos, 8); }
+      if (a.surviveT <= 0) { for (const m of this._livingEnemies()) m.dying = 0.001; return this._finishAdventure(); }
+    } else if (k === 'gauntlet') {
+      if (this._livingEnemies().length === 0) {
+        if (a.queue.length) this._spawnEnemy(a.queue.shift(), this._near(a.pos, 30) ? { x: Math.round(this.player.pos.x + 6), z: Math.round(this.player.pos.z + 6) } : a.pos);
+        else return this._finishAdventure();
+      }
+    } else if (k === 'rescue') {
+      if (!a.guardsCleared && this._livingEnemies().length === 0) { a.guardsCleared = true; this._toast('🛡️ Guards defeated — reach your friend!'); }
+      if (a.guardsCleared) { const v = this.entities.findQuestMob('alost'); if (v && this._nearPos(v.pos, 2.8)) return this._finishAdventure(); }
+    } else { // boss / horde / overlord
+      if (this._livingEnemies().length === 0) return this._finishAdventure();
+    }
+  }
+
+  _near(spot, r) { return Math.hypot(spot.x + 0.5 - this.player.pos.x, spot.z + 0.5 - this.player.pos.z) < r; }
+  _nearPos(pos, r) { return Math.hypot(pos.x - this.player.pos.x, pos.z - this.player.pos.z) < r; }
+
+  _finishAdventure() {
+    const fight = this.adv.kind !== 'treasure' && this.adv.kind !== 'treasures3';
+    if (this.progression && this.progression.addXp) this.progression.addXp(fight ? 80 : 50);
+    const loot = fight ? [{ id: 'diamond', count: 2 }, { id: 'gold_ingot', count: 4 }]
+                       : [{ id: 'diamond', count: 3 }, { id: 'apple', count: 4 }];
+    for (const l of loot) this.ui.addToInventory({ id: l.id, count: l.count });
+    // tidy up any leftover quest villager from a rescue
+    const v = this.entities.findQuestMob('alost'); if (v) v.quest = null;
+    this.audio.play('levelup');
+    this._toast(`🏅 ${this.adv.tpl.title} complete! Reward earned.`);
+    this.adv = null;
+    this.repeatTimer = 45 + Math.random() * 35;   // next adventure in ~1 minute
   }
 
   _checkTreasures() {
@@ -302,11 +428,25 @@ export class Quests {
       case TALK_AARAV: { const a = this.entities.findQuestMob('aarav'); const p = a ? a.pos : this.aaravPos; return { name: 'Aarav', x: p.x, z: p.z }; }
       case TREASURE: { const t = this._nearestTreasure(); return t ? { name: 'Treasure', x: t.x, z: t.z } : null; }
       case BEAT_DRAGON: { const d = this.entities.findQuestMob('dragon'); const p = d ? d.pos : this.dragonPos; return { name: 'Dragon', x: p.x, z: p.z }; }
-      default:
-        if (this.repeat && this.repeat.type === 'hunt') { const m = this.entities.findQuestMob('rboss'); const p = m ? m.pos : this.repeat.pos; return { name: 'Monster', x: p.x, z: p.z }; }
-        if (this.repeat && this.repeat.type === 'treasure') return { name: 'Treasure', x: this.repeat.pos.x, z: this.repeat.pos.z };
-        return null;
+      default: return this._advTarget();
     }
+  }
+  _advTarget() {
+    const a = this.adv;
+    if (!a) return null;
+    if (a.kind === 'treasure') return { name: 'Treasure', x: a.pos.x, z: a.pos.z };
+    if (a.kind === 'treasures3') { const s = a.spots[a.found] || a.pos; return { name: 'Treasure', x: s.x, z: s.z }; }
+    if (a.kind === 'rescue' && a.guardsCleared) { const v = this.entities.findQuestMob('alost'); const p = v ? v.pos : a.pos; return { name: 'Friend', x: p.x, z: p.z }; }
+    const e = this._livingEnemies()[0];
+    const p = e ? e.pos : a.pos;
+    return { name: e ? enemyName(e.type) : 'Monster', x: p.x, z: p.z };
+  }
+  _advBossMob() {
+    const a = this.adv;
+    if (!a || (a.kind !== 'boss' && a.kind !== 'overlord' && a.kind !== 'gauntlet')) return null;
+    let best = null;
+    for (const m of this._livingEnemies()) if (!best || (m.maxHp || 0) > (best.maxHp || 0)) best = m;
+    return best;
   }
   _nearestTreasure() {
     if (!this._tpos) this._placeTreasures();
@@ -326,10 +466,22 @@ export class Quests {
       case TALK_AARAV: return 'Talk to Aarav and bring him home';
       case TREASURE: return `Find Dad's hidden treasures (${this.opened.size}/3)`;
       case BEAT_DRAGON: return 'Defeat the Dragon with the Star Blade!';
-      default:
-        if (this.repeat && this.repeat.type === 'hunt') return 'A wild monster is near — defeat it!';
-        if (this.repeat && this.repeat.type === 'treasure') return 'A new treasure awaits — go find it!';
-        return '';
+      default: return this._advObjective();
+    }
+  }
+  _advObjective() {
+    const a = this.adv;
+    if (!a) return '';
+    const alive = this._livingEnemies().length;
+    switch (a.kind) {
+      case 'treasure': return 'Find the hidden treasure!';
+      case 'treasures3': return `Collect the treasures (${a.found}/${a.spots.length})`;
+      case 'survive': return `Survive the attack! (${Math.max(0, Math.ceil(a.surviveT))}s)`;
+      case 'gauntlet': return `Defeat every challenger (${a.queue.length + alive} left)`;
+      case 'rescue': return a.guardsCleared ? 'Reach your rescued friend!' : `Defeat the guards (${alive} left)`;
+      case 'boss': return `Defeat the ${a.bossName || 'monster'}!`;
+      case 'overlord': return `Defeat the Overlord and minions (${alive} left)`;
+      default: return `Defeat the monsters (${alive} left)`;
     }
   }
 
