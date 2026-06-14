@@ -333,8 +333,16 @@ export class Quests {
     return this.entities.spawnMob(id, x + 0.5, y, z + 0.5, { quest: 'aenemy' });
   }
   _livingEnemies() { return this.entities.mobs.filter(m => m.quest === 'aenemy' && m.dying <= 0); }
+  // clear any leftover adventure enemies / rescue villager between adventures
+  _clearAdvEnemies() {
+    for (const m of this.entities.mobs) {
+      if (m.quest === 'aenemy' && m.dying <= 0) m.dying = 0.001;
+      else if (m.quest === 'alost') m.quest = null;
+    }
+  }
 
   _startAdventure() {
+    this._clearAdvEnemies();   // never carry stragglers into a new adventure
     this.repeatCount++;
     const tpl = ADVENTURES[bagDraw(this._advBag, ADVENTURES)];
     const story = STORYLINES[bagDraw(this._storyBag, STORYLINES)];
@@ -374,6 +382,10 @@ export class Quests {
 
   _tickAdventure(dt) {
     const a = this.adv, k = a.kind;
+    // safety net: an adventure can never get permanently stuck (e.g. an enemy
+    // pathed somewhere unreachable). After a generous time limit, award it.
+    a.elapsed = (a.elapsed || 0) + dt;
+    if (a.elapsed > 300) { this._toast('⏱️ Adventure complete — reward granted!'); return this._finishAdventure(); }
     if (k === 'treasure') {
       if (this._near(a.pos, 2.8)) return this._finishAdventure();
     } else if (k === 'treasures3') {
@@ -405,8 +417,7 @@ export class Quests {
     const loot = fight ? [{ id: 'diamond', count: 2 }, { id: 'gold_ingot', count: 4 }]
                        : [{ id: 'diamond', count: 3 }, { id: 'apple', count: 4 }];
     for (const l of loot) this.ui.addToInventory({ id: l.id, count: l.count });
-    // tidy up any leftover quest villager from a rescue
-    const v = this.entities.findQuestMob('alost'); if (v) v.quest = null;
+    this._clearAdvEnemies();   // remove any stragglers + release rescue villager
     this.audio.play('levelup');
     this._toast(`🏅 ${this.adv.tpl.title} complete! Reward earned.`);
     this.adv = null;

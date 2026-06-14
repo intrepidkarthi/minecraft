@@ -498,7 +498,10 @@ export class Entities {
 
       // despawn far hostiles
       if (def.hostile && dist > 80 && !m.quest) { this._removeMob(i); continue; }
-      if (m.pos.y < -30 && !m.quest) { this._removeMob(i); continue; }
+      // anything that falls into the void is gone — even quest/adventure mobs,
+      // otherwise an enemy that falls down a hole would keep an adventure
+      // un-winnable forever. (Story mobs are placed on solid ground.)
+      if (m.pos.y < -30) { this._removeMob(i); continue; }
 
       // dying animation
       if (m.dying > 0) {
