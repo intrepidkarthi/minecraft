@@ -38,6 +38,36 @@ function box(w, h, d, tex) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
 }
 
+// Adyah's family villagers — real character art used as billboard sprites.
+// A simple labelled figure shows instantly; the real photo from
+// ../assets/characters/<who>_villager.png swaps in once it loads (and if the
+// file is missing/blocked, the figure stays — villagers are never invisible).
+const FAMILY = ['adyah', 'mom', 'dad', 'aarav'];
+const FAMILY_COLOR = { adyah: '#8e44ad', mom: '#c0392b', dad: '#2c3e50', aarav: '#16a085' };
+const charTexCache = new Map();
+let villagerSeq = 0;
+function drawFallbackChar(c, who) {
+  c.clearRect(0, 0, 256, 256);
+  c.fillStyle = FAMILY_COLOR[who] || '#777';        // robe/body
+  c.fillRect(70, 120, 116, 130);
+  c.fillStyle = '#e8b98f'; c.beginPath(); c.arc(128, 90, 46, 0, Math.PI * 2); c.fill();  // head
+  c.fillStyle = '#fff'; c.font = 'bold 34px sans-serif'; c.textAlign = 'center';
+  c.fillText(who.charAt(0).toUpperCase() + who.slice(1), 128, 210);
+}
+function familyTexture(who) {
+  if (charTexCache.has(who)) return charTexCache.get(who);
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const c = cv.getContext('2d');
+  drawFallbackChar(c, who);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter;
+  const img = new Image();
+  img.onload = () => { c.clearRect(0, 0, 256, 256); c.drawImage(img, 0, 0, 256, 256); tex.needsUpdate = true; };
+  img.src = `../assets/characters/${who}_villager.png`;
+  charTexCache.set(who, tex);
+  return tex;
+}
+
 // ------------------------------------------------------------- mob definitions
 const px = 1 / 16; // 1 mc-pixel in blocks
 
@@ -93,37 +123,14 @@ function buildModel(type) {
       g.add(leg); parts['leg' + s] = leg;
     }
   } else if (type === 'villager') {
-    const skin = 0xc89a78, robe = 0x8a5a34, trim = 0x5e3d22;
-    const headT = face('villager_head', skin);
-    const faceT = face('villager_face', skin, (c) => {
-      c.fillStyle = '#3a2a1a';                       // brow
-      c.fillRect(3, 5, 4, 1); c.fillRect(9, 5, 4, 1);
-      c.fillStyle = '#ffffff'; c.fillRect(4, 6, 2, 2); c.fillRect(10, 6, 2, 2);
-      c.fillStyle = '#2a4a8a'; c.fillRect(4, 7, 1, 1); c.fillRect(11, 7, 1, 1);
-      c.fillStyle = '#a87a58';                       // big nose
-      c.fillRect(7, 7, 2, 6);
-      c.fillStyle = '#7a5238'; c.fillRect(6, 13, 4, 1); // mouth
-    });
-    const head = new THREE.Mesh(new THREE.BoxGeometry(8 * px, 8 * px, 8 * px),
-      [headT, headT, headT, headT, headT, faceT].map(t => new THREE.MeshBasicMaterial({ map: t })));
-    head.position.y = 28 * px; g.add(head); parts.head = head;
-    const body = box(8 * px, 12 * px, 4 * px, face('villager_body', robe)); body.position.y = 18 * px; g.add(body);
-    // arms clasped in front
-    const armT = face('villager_arm', trim);
-    for (const s of [-1, 1]) {
-      const arm = box(4 * px, 11 * px, 4 * px, armT);
-      arm.geometry.translate(0, -4 * px, 0);
-      arm.position.set(s * 5 * px, 22 * px, 1.5 * px);
-      arm.rotation.x = -1.2;
-      g.add(arm); parts['arm' + s] = arm;
-    }
-    const legT = face('villager_leg', trim);
-    for (const s of [-1, 1]) {
-      const leg = box(4 * px, 12 * px, 4 * px, legT);
-      leg.geometry.translate(0, -6 * px, 0);
-      leg.position.set(s * 2 * px, 12 * px, 0);
-      g.add(leg); parts['leg' + s] = leg;
-    }
+    // Adyah's family — rendered as camera-facing billboards from their real art.
+    const who = FAMILY[villagerSeq++ % FAMILY.length];
+    const mat = new THREE.SpriteMaterial({ map: familyTexture(who), transparent: true, alphaTest: 0.4 });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.7, 1.9, 1);
+    sprite.position.y = 0.95;
+    g.add(sprite);
+    g.userData.who = who;
   } else if (type === 'creeper') {
     const skinT = face('creeper_skin', 0x4ea84e, null);
     const faceT = face('creeper_face', 0x4ea84e, (c) => {

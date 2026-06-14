@@ -584,7 +584,8 @@ export class UI {
       ['Right click or R', 'Place block / use / eat'],
       ['1–9 / scroll', 'Choose hotbar item'],
       ['E', 'Inventory & 2×2 crafting'], ['K', 'Skills & perks'], ['Q', 'Drop item'],
-      ['F', 'Toggle fly'], ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
+      ['F', 'Toggle fly'], ['Space (flying)', 'Fly up'], ['Shift (flying)', 'Fly down'],
+      ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
     ];
     const tbl = el('div', 'helptable', keysBox);
     for (const [k, v] of rows) {
