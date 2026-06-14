@@ -35,6 +35,101 @@ let timeOfDay = 0.02;
 let saveData = null;
 let running = false;
 
+// ============================================================ touch controls
+// On-screen FPS controls for tablets/phones: left thumb-stick to move, drag the
+// screen to look, and tap buttons to mine / use / jump / descend / fly / inventory.
+function setupTouchControls() {
+  const root = document.createElement('div'); root.id = 'tc'; document.body.appendChild(root);
+  const mk = (id, cls, txt) => { const e = document.createElement('div'); e.id = id; e.className = 'tc-ctl ' + cls; if (txt) e.textContent = txt; root.appendChild(e); return e; };
+  const joy = mk('tc-joy', '');
+  const thumb = document.createElement('div'); thumb.id = 'tc-thumb'; joy.appendChild(thumb);
+  const bMine = mk('tc-mine', 'tc-btn', '⛏️');
+  const bUse  = mk('tc-use', 'tc-btn', '✋');
+  const bJump = mk('tc-jump', 'tc-btn', '⤴️');
+  const bDown = mk('tc-down', 'tc-btn', '⬇️');
+  const bFly  = mk('tc-fly', 'tc-btn small', '🕊️');
+  const bInv  = mk('tc-inv', 'tc-btn small', '🎒');
+
+  const R = 55;
+  let joyId = null, joyCx = 0, joyCy = 0, lookId = null, lookX = 0, lookY = 0;
+
+  const setMove = (dx, dy) => {
+    keys['KeyW'] = keys['KeyS'] = keys['KeyA'] = keys['KeyD'] = false;
+    const mag = Math.hypot(dx, dy);
+    if (mag > 0.3 * R) {
+      if (dy < -0.4 * R) keys['KeyW'] = true;
+      if (dy >  0.4 * R) keys['KeyS'] = true;
+      if (dx < -0.4 * R) keys['KeyA'] = true;
+      if (dx >  0.4 * R) keys['KeyD'] = true;
+      wantSprint = (mag > 0.9 * R && keys['KeyW']);
+    } else wantSprint = false;
+  };
+  const resetJoy = () => { joyId = null; thumb.style.transform = ''; setMove(0, 0); wantSprint = false; };
+
+  const hold = (el, on, off) => {
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); on(); }, { passive: false });
+    const end = (e) => { if (e) e.preventDefault(); off(); };
+    el.addEventListener('touchend', end, { passive: false });
+    el.addEventListener('touchcancel', end);
+  };
+  const tap = (el, fn) => el.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+
+  hold(bMine, () => { mouseDown[0] = true; swingT = 0; }, () => { mouseDown[0] = false; });
+  hold(bJump, () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
+  hold(bDown, () => { keys['ShiftLeft'] = true; }, () => { keys['ShiftLeft'] = false; });
+  tap(bUse, () => rightClick());
+  tap(bFly, () => { player.flying = !player.flying; ui.toast(player.flying ? '🕊️ Flying — ⤴️ up, ⬇️ down' : 'Flying off'); });
+  tap(bInv, () => { if (ui.isOpen()) ui.close(); else ui.open('inventory'); });
+
+  joy.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const t = e.changedTouches[0]; joyId = t.identifier;
+    const r = joy.getBoundingClientRect(); joyCx = r.left + r.width / 2; joyCy = r.top + r.height / 2;
+  }, { passive: false });
+
+  // any touch that isn't on a control becomes the "look" finger
+  document.addEventListener('touchstart', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.target.closest && t.target.closest('.tc-ctl')) continue;
+      if (lookId === null) { lookId = t.identifier; lookX = t.clientX; lookY = t.clientY; }
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joyId) {
+        e.preventDefault();
+        let dx = t.clientX - joyCx, dy = t.clientY - joyCy;
+        const m = Math.hypot(dx, dy); if (m > R) { dx = dx / m * R; dy = dy / m * R; }
+        thumb.style.transform = `translate(${dx}px, ${dy}px)`;
+        setMove(dx, dy);
+      } else if (t.identifier === lookId) {
+        e.preventDefault();
+        if (!ui.isOpen() && !(quests && quests.blocking())) {
+          player.yaw -= (t.clientX - lookX) * 0.005;
+          player.pitch -= (t.clientY - lookY) * 0.005;
+          player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, player.pitch));
+        }
+        lookX = t.clientX; lookY = t.clientY;
+      }
+    }
+  }, { passive: false });
+
+  const onEnd = (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joyId) resetJoy();
+      if (t.identifier === lookId) lookId = null;
+    }
+  };
+  document.addEventListener('touchend', onEnd, { passive: true });
+  document.addEventListener('touchcancel', onEnd, { passive: true });
+
+  // tap a hotbar slot to select it
+  ui.hotSlots.forEach((slot, i) => {
+    slot.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); ui.sel = i; ui.updateHotbar(); }, { passive: false });
+  });
+}
+
 // A full house-building palette — every existing building block, infinite, so
 // Adyah can make walls, windows, roofs, floors and decoration without crafting.
 const BUILDER_KIT = [
@@ -72,7 +167,7 @@ async function boot() {
   entities = new Entities(world, renderer.scene, player, particles, audio);
   achievements = new Achievements(ui, audio);
   progression = new Progression(ui, audio, player, entities);
-  quests = new Quests({ player, entities, ui, world, audio, progression, lockPointer: () => canvas.requestPointerLock() });
+  quests = new Quests({ player, entities, ui, world, audio, progression, lockPointer: () => { if (!TOUCH) canvas.requestPointerLock(); } });
   ui.onCraft = () => achievements.onCraft();
 
   // spawn point
@@ -142,6 +237,7 @@ async function boot() {
   loadingEl.style.display = 'none';
   playOverlay.style.display = 'flex';
   running = true;
+  if (TOUCH) setupTouchControls();
   requestAnimationFrame(loop);
 }
 
@@ -150,6 +246,10 @@ const keys = {};
 let mouseDown = [false, false, false];
 let lastWTap = 0, wantSprint = false;
 let swingT = 1; // viewmodel swing timer
+// touch device? (tablet/phone) — enables on-screen FPS controls, disables pointer-lock
+const TOUCH = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+  || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
+  || /[?&]touch=1/.test(location.search);
 let attackCd = 0;
 
 document.addEventListener('keydown', (e) => {
@@ -196,6 +296,7 @@ window.addEventListener('wheel', (e) => {
   ui.updateHotbar();
 });
 document.addEventListener('mousedown', (e) => {
+  if (TOUCH) return;   // touch devices drive gameplay via the on-screen controls
   if (!running || ui.isOpen() || (quests && quests.blocking())) return;
   // Allow gameplay clicks even without pointer-lock (Mac trackpad can lose it easily).
   // The play overlay covers the canvas before first play, so we won't accidentally fire then.
@@ -205,7 +306,7 @@ document.addEventListener('mousedown', (e) => {
   // If pointer-lock isn't active, this click can re-acquire it transparently
   if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
-document.addEventListener('mouseup', (e) => { mouseDown[e.button] = false; });
+document.addEventListener('mouseup', (e) => { if (TOUCH) return; mouseDown[e.button] = false; });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('mousemove', (e) => {
   if (!ui || document.pointerLockElement !== canvas || ui.isOpen()) return;
@@ -228,7 +329,7 @@ playOverlay.addEventListener('click', () => {
     ui.open('pause'); ui.overlay = 'help'; ui._refreshOverlay();
     return;
   }
-  canvas.requestPointerLock();
+  if (!TOUCH) canvas.requestPointerLock();
   audio._ensure();
 });
 document.addEventListener('pointerlockchange', () => {
@@ -242,7 +343,7 @@ document.addEventListener('pointerlockchange', () => {
 
 // reacquire pointer lock when UI closes
 function uiClosed() {
-  if (!player.dead) canvas.requestPointerLock();
+  if (!player.dead && !TOUCH) canvas.requestPointerLock();
 }
 
 // ============================================================ interaction
@@ -733,6 +834,7 @@ function loop(now) {
   } else {
     ui.setAction(actionHintFor(ui.selected()));
   }
+  if (TOUCH) document.body.classList.toggle('ui-open', ui.isOpen());
 
   renderer.render();
 
@@ -762,7 +864,7 @@ boot().then(() => {
     player.pos.y = world.surfaceY(Math.floor(player.pos.x), Math.floor(player.pos.z)) + 1.2;
     ui.close();
     ui.updateHUD(player);
-    canvas.requestPointerLock();
+    if (!TOUCH) canvas.requestPointerLock();
   };
   ui.onRenderDist = (v) => { renderer.renderDist = v; };
   entities.onPickup = (stack) => { achievements.onPickup(stack.id); quests.onPickup(stack.id); return ui.addToInventory(stack); };
