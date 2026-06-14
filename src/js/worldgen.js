@@ -31,8 +31,10 @@ export class WorldGen {
     const hill = this.nHill.fbm(x / 120, z / 120, 3);
     const m = this.nMt.ridged(x / 360, z / 360, 4);          // ~0..1
     let h = 55 + (cont + 0.32) * 24 + hill * 6;
-    const mt = Math.max(0, m - 0.62) / 0.38;
-    h += mt * mt * 58;
+    // Mountains: rarer (higher threshold) and shorter (smaller amplitude) so they
+    // read as scenery on the horizon, not walls boxing the player in at spawn.
+    const mt = Math.max(0, m - 0.72) / 0.28;
+    h += mt * mt * 34;
     h = Math.max(4, Math.min(CY - 10, h)) | 0;
     if (this.heightCache.size > 60000) this.heightCache.clear();
     this.heightCache.set(key, h);
@@ -176,7 +178,10 @@ export class WorldGen {
         case BIOME.MOUNTAINS: treeChance = h < 86 ? 1 / 120 : 0; kind = 'spruce'; break;
         case BIOME.DESERT: treeChance = 1 / 160; kind = 'cactus'; break;
       }
-      if (r < treeChance) {
+      // keep an open clearing right around spawn so the first view is wide open
+      const sc = this.spawnClear;
+      const nearSpawn = sc && Math.abs(wx - sc.x) < 11 && Math.abs(wz - sc.z) < 11;
+      if (r < treeChance && !nearSpawn) {
         this.tree(kind, wx, h, wz, put, hash2(this.seed ^ 0x9999, wx, wz));
         continue;
       }
@@ -238,25 +243,40 @@ export class WorldGen {
     put(wx, h + trunk + 1, wz, leaf, true);
   }
 
-  // find a good spawn near origin — prefer open PLAINS so the player starts in
-  // the open and can see the varied world around them, not buried in a forest.
+  // find a good spawn near origin — an open, FLAT plains spot so the player can
+  // see the world around them instead of staring at a cliff or a wall of trees.
+  // Scores candidates by local flatness; a clear winner ends the search early.
   findSpawn() {
-    let fallback = null;   // first dry, non-mountain spot of any biome
-    for (let r = 0; r < 64; r++) {
-      for (let a = 0; a < 8; a++) {
-        const ang = a * Math.PI / 4;
-        const x = Math.round(Math.cos(ang) * r * 8), z = Math.round(Math.sin(ang) * r * 8);
+    // how bumpy the ground is in a small disc around a column (the "steps" metric)
+    const spread = (x, z) => {
+      let mn = Infinity, mx = -Infinity;
+      for (let dx = -8; dx <= 8; dx += 2) for (let dz = -8; dz <= 8; dz += 2) {
+        const hh = this.heightAt(x + dx, z + dz);
+        if (hh < mn) mn = hh; if (hh > mx) mx = hh;
+      }
+      return mx - mn;
+    };
+    let best = null, bestScore = Infinity;
+    for (let r = 1; r <= 56; r++) {
+      for (let a = 0; a < 12; a++) {
+        const ang = a * Math.PI / 6;
+        const x = Math.round(Math.cos(ang) * r * 6), z = Math.round(Math.sin(ang) * r * 6);
         const h = this.heightAt(x, z);
         if (h <= SEA + 1) continue;
         const bio = this.biomeAt(x, z);
         if (bio === BIOME.MOUNTAINS) continue;
-        const spot = { x: x + 0.5, y: h + 2, z: z + 0.5 };
-        // ideal: open plains — return immediately
-        if (bio === BIOME.PLAINS) return spot;
-        // otherwise remember the first usable spot and keep looking for plains
-        if (!fallback) fallback = spot;
+        const flat = spread(x, z);
+        // lower is better: reward flat ground, prefer plains, mild distance penalty
+        const score = flat * 3 + (bio === BIOME.PLAINS ? 0 : 28) + r * 0.4;
+        if (score < bestScore) { bestScore = score; best = { x: x + 0.5, y: h + 2, z: z + 0.5 }; }
+        // a flat plains clearing a little out from origin is ideal — take it
+        if (bio === BIOME.PLAINS && flat <= 4 && r >= 2) {
+          this.spawnClear = { x, z };
+          return best;
+        }
       }
     }
-    return fallback || { x: 0.5, y: this.heightAt(0, 0) + 2, z: 0.5 };
+    if (best) this.spawnClear = { x: Math.floor(best.x), z: Math.floor(best.z) };
+    return best || { x: 0.5, y: this.heightAt(0, 0) + 2, z: 0.5 };
   }
 }
