@@ -172,3 +172,13 @@ body.ui-open #tc-close { display: flex; }
 body.is-touch .slot { width: 58px; height: 58px; }
 body.is-touch .slot .icon { width: 46px; height: 46px; }
 body.is-touch #cursorstack .icon { width: 46px; height: 46px; }
+
+/* ---------------- start mode select (desktop / tablet) ---------------- */
+#modeselect { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8, 10, 24, .72); z-index: 65; }
+.modebtns { display: flex; gap: 24px; margin-top: 26px; justify-content: center; flex-wrap: wrap; }
+.modebtns button { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 190px; padding: 26px 18px; border-radius: 16px; border: 2px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; font: inherit; transition: transform .08s, background .15s, border-color .15s; }
+.modebtns button:hover, .modebtns button:active { background: rgba(255,255,255,.16); transform: translateY(-2px); }
+.modebtns button .mi { font-size: 52px; line-height: 1; }
+.modebtns button b { font-size: 22px; }
+.modebtns button small { color: #cfcfe0; font-size: 14px; }
+.modebtns button.suggested { border-color: #6ddf4a; box-shadow: 0 0 0 2px rgba(109,223,74,.35); }

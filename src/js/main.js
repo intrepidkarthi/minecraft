@@ -239,10 +239,29 @@ async function boot() {
   else quests.init(player.spawn);
 
   loadingEl.style.display = 'none';
-  playOverlay.style.display = 'flex';
   running = true;
-  if (TOUCH) setupTouchControls();
+  showModeSelect();
   requestAnimationFrame(loop);
+}
+
+// Start screen: pick Desktop or Tablet before entering the world.
+function showModeSelect() {
+  const sel = document.getElementById('modeselect');
+  const choose = (touch) => {
+    TOUCH = touch;
+    sel.style.display = 'none';
+    if (TOUCH) setupTouchControls();
+    playOverlay.style.display = 'flex';
+  };
+  // don't let clicks on this screen fall through to the game (mine/place)
+  sel.addEventListener('mousedown', (e) => e.stopPropagation());
+  const dBtn = document.getElementById('mode-desktop');
+  const tBtn = document.getElementById('mode-tablet');
+  dBtn.addEventListener('click', () => choose(false));
+  tBtn.addEventListener('click', () => choose(true));
+  // highlight the auto-detected option as a hint
+  (TOUCH_DETECTED ? tBtn : dBtn).classList.add('suggested');
+  sel.style.display = 'flex';
 }
 
 // ============================================================ input
@@ -250,10 +269,12 @@ const keys = {};
 let mouseDown = [false, false, false];
 let lastWTap = 0, wantSprint = false;
 let swingT = 1; // viewmodel swing timer
-// touch device? (tablet/phone) — enables on-screen FPS controls, disables pointer-lock
-const TOUCH = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+// Control mode. Auto-detected as a default, but the player picks Desktop/Tablet
+// on the start screen, which sets TOUCH before the game begins.
+const TOUCH_DETECTED = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
   || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
   || /[?&]touch=1/.test(location.search);
+let TOUCH = TOUCH_DETECTED;
 let attackCd = 0;
 
 document.addEventListener('keydown', (e) => {
