@@ -559,7 +559,11 @@ export class Quests {
     this.elDlgName = dlg.querySelector('.dialog-name');
     this.elDlgText = dlg.querySelector('.dialog-text');
     this.elDlgHint = dlg.querySelector('.dialog-hint');
-    dlg.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); if (this._dlgAdvance) this._dlgAdvance(); });
+    const advance = (e) => { e.stopPropagation(); e.preventDefault(); if (this._dlgAdvance) this._dlgAdvance(); };
+    dlg.addEventListener('mousedown', advance);
+    // touch: preventDefault here also suppresses the synthesized mousedown, so a
+    // tap advances exactly once (critical — the whole story flows through these).
+    dlg.addEventListener('touchstart', advance, { passive: false });
   }
   _refreshHud() { /* update() repaints every frame */ }
 
