@@ -68,6 +68,24 @@ function familyTexture(who) {
   return tex;
 }
 
+// Boss monsters — same billboard trick using ../assets/characters/monster_<name>.png
+const monsterTexCache = new Map();
+function monsterTexture(name) {
+  if (monsterTexCache.has(name)) return monsterTexCache.get(name);
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#7a1f1f'; c.beginPath(); c.arc(128, 128, 96, 0, Math.PI * 2); c.fill();   // menacing fallback
+  c.fillStyle = '#ffd23a'; c.fillRect(86, 104, 28, 16); c.fillRect(142, 104, 28, 16);       // eyes
+  c.fillStyle = '#2a0a0a'; c.fillRect(94, 110, 12, 8); c.fillRect(150, 110, 12, 8);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter;
+  const img = new Image();
+  img.onload = () => { c.clearRect(0, 0, 256, 256); c.drawImage(img, 0, 0, 256, 256); tex.needsUpdate = true; };
+  img.src = `../assets/characters/monster_${name}.png`;
+  monsterTexCache.set(name, tex);
+  return tex;
+}
+
 // ------------------------------------------------------------- mob definitions
 const px = 1 / 16; // 1 mc-pixel in blocks
 
@@ -81,10 +99,12 @@ const MOB_DEFS = {
   sheep: { hp: 8, speed: 1.6, h: 1.25, hw: 0.42, drops: [[B.WOOL, 1, 1]] },
   chicken: { hp: 4, speed: 1.6, h: 0.7, hw: 0.25, drops: [['chicken', 1, 1], ['feather', 0, 1]] },
   // friendly people — wander the plains, never attack, drop nothing
-  villager: { hp: 20, speed: 1.3, h: 1.92, hw: 0.32, friendly: true, drops: [] }
+  villager: { hp: 20, speed: 1.3, h: 1.92, hw: 0.32, friendly: true, drops: [] },
+  // quest boss — big, tough, chases the player; spawned only by the adventure
+  boss: { hp: 70, hostile: true, speed: 2.3, dmg: 4, h: 2.6, hw: 0.6, drops: [], boss: true }
 };
 
-function buildModel(type) {
+function buildModel(type, opts = {}) {
   const g = new THREE.Group();
   const parts = {};
   const face = (key, base, deco) => skinTex(key, base, 0.12, deco);
@@ -124,13 +144,21 @@ function buildModel(type) {
     }
   } else if (type === 'villager') {
     // Adyah's family — rendered as camera-facing billboards from their real art.
-    const who = FAMILY[villagerSeq++ % FAMILY.length];
+    const who = opts.who || FAMILY[villagerSeq++ % FAMILY.length];
     const mat = new THREE.SpriteMaterial({ map: familyTexture(who), transparent: true, alphaTest: 0.4 });
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(1.7, 1.9, 1);
     sprite.position.y = 0.95;
     g.add(sprite);
     g.userData.who = who;
+  } else if (type === 'boss') {
+    const monster = opts.monster || 'ogre';
+    const mat = new THREE.SpriteMaterial({ map: monsterTexture(monster), transparent: true, alphaTest: 0.4 });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(3.0, 3.2, 1);
+    sprite.position.y = 1.5;
+    g.add(sprite);
+    g.userData.monster = monster;
   } else if (type === 'creeper') {
     const skinT = face('creeper_skin', 0x4ea84e, null);
     const faceT = face('creeper_face', 0x4ea84e, (c) => {
@@ -236,9 +264,9 @@ export class Entities {
   }
 
   // ---------- spawning ----------
-  spawnMob(type, x, y, z) {
+  spawnMob(type, x, y, z, opts = {}) {
     const def = MOB_DEFS[type];
-    const { group, parts } = buildModel(type);
+    const { group, parts } = buildModel(type, opts);
     group.position.set(x, y, z);
     this.scene.add(group);
     const mob = {
@@ -248,11 +276,15 @@ export class Entities {
       hp: def.hp, onGround: false, hitWall: false,
       state: 'wander', stateT: this.rng() * 4, targetYaw: this.rng() * Math.PI * 2,
       walkPhase: 0, attackCd: 0, hurtT: 0, dying: 0, fuse: -1, fleeT: 0,
-      burnT: 0, aggro: false, fallStart: null
+      burnT: 0, aggro: false, fallStart: null,
+      quest: opts.quest || null, who: opts.who || null, maxHp: def.hp
     };
     this.mobs.push(mob);
     return mob;
   }
+
+  // quest helper: find a living mob tagged with a quest id (e.g. 'boss', 'aarav')
+  findQuestMob(tag) { return this.mobs.find(m => m.quest === tag && m.dying <= 0) || null; }
 
   dropItem(stack, x, y, z, vel) {
     let model;
@@ -356,8 +388,8 @@ export class Entities {
       const dist3 = Math.hypot(dx, dy, dz);
 
       // despawn far hostiles
-      if (def.hostile && dist > 80) { this._removeMob(i); continue; }
-      if (m.pos.y < -10) { this._removeMob(i); continue; }
+      if (def.hostile && dist > 80 && !m.quest) { this._removeMob(i); continue; }
+      if (m.pos.y < -30 && !m.quest) { this._removeMob(i); continue; }
 
       // dying animation
       if (m.dying > 0) {

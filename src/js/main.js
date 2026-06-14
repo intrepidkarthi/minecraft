@@ -13,6 +13,7 @@ import { UI, iconFor } from './ui.js';
 import { itemDef, breakSeconds, canHarvest, attackDamage, smeltResult, fuelValue, ITEMS } from './items.js';
 import { Achievements } from './achievements.js';
 import { Progression } from './progression.js';
+import { Quests } from './quests.js';
 
 const HAS_API = !!(window.gameAPI && window.gameAPI.isElectron);
 const Store = {
@@ -29,7 +30,7 @@ const loadingBar = document.getElementById('loadbar');
 const playOverlay = document.getElementById('playoverlay');
 const canvas = document.getElementById('game');
 
-let world, renderer, player, ui, entities, particles, audio, achievements, progression;
+let world, renderer, player, ui, entities, particles, audio, achievements, progression, quests;
 let timeOfDay = 0.02;
 let saveData = null;
 let running = false;
@@ -55,6 +56,7 @@ async function boot() {
   entities = new Entities(world, renderer.scene, player, particles, audio);
   achievements = new Achievements(ui, audio);
   progression = new Progression(ui, audio, player, entities);
+  quests = new Quests({ player, entities, ui, world, audio, progression, lockPointer: () => canvas.requestPointerLock() });
   ui.onCraft = () => achievements.onCraft();
 
   // spawn point
@@ -70,6 +72,7 @@ async function boot() {
     entities.deserialize(saveData.drops);
     achievements.deserialize(saveData.ach);
     progression.deserialize(saveData.prog);
+    quests.deserialize(saveData.quest);
   } else {
     spawn = world.gen.findSpawn();
     player.pos = { ...spawn };
@@ -112,6 +115,10 @@ async function boot() {
 
   // settle player on ground
   if (!saveData) player.pos.y = world.surfaceY(Math.floor(player.pos.x), Math.floor(player.pos.z)) + 1.2;
+
+  // kick off (or restore) Adyah's adventure
+  if (saveData) quests.resume();
+  else quests.init(player.spawn);
 
   loadingEl.style.display = 'none';
   playOverlay.style.display = 'flex';
@@ -169,7 +176,7 @@ window.addEventListener('wheel', (e) => {
   ui.updateHotbar();
 });
 document.addEventListener('mousedown', (e) => {
-  if (!running || ui.isOpen()) return;
+  if (!running || ui.isOpen() || (quests && quests.blocking())) return;
   // Allow gameplay clicks even without pointer-lock (Mac trackpad can lose it easily).
   // The play overlay covers the canvas before first play, so we won't accidentally fire then.
   mouseDown[e.button] = true;
@@ -208,7 +215,7 @@ document.addEventListener('pointerlockchange', () => {
   // Pointer-lock can drop for many reasons on macOS (Esc, focus loss, gesture). Don't
   // jam the user into a pause menu — show the click-to-resume overlay instead so a
   // single click puts them back in the game.
-  if (document.pointerLockElement !== canvas && ui && !ui.isOpen() && running && !player.dead) {
+  if (document.pointerLockElement !== canvas && ui && !ui.isOpen() && running && !player.dead && !(quests && quests.blocking())) {
     playOverlay.style.display = 'flex';
   }
 });
@@ -230,6 +237,9 @@ function eyeRay() {
 
 function rightClick() {
   const { e, d } = eyeRay();
+  // talk to a villager we're looking at (right-click to chat)
+  const npc = entities.raycastMob(e.x, e.y, e.z, d.x, d.y, d.z, 4);
+  if (npc && npc.mob.type === 'villager') { quests.talkTo(npc.mob); return; }
   const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach);
   const held = ui.selected();
 
@@ -556,7 +566,8 @@ function buildSave() {
     containers: [...world.containers],
     drops: entities.serialize(),
     ach: achievements.serialize(),
-    prog: progression.serialize()
+    prog: progression.serialize(),
+    quest: quests.serialize()
   };
 }
 let saveTimer = 0;
@@ -593,7 +604,7 @@ function loop(now) {
       jump: keys['Space'], sneak: keys['ShiftLeft'] || keys['ShiftRight'],
       sprint: keys['ControlLeft'] || wantSprint
     };
-    if (ui.isOpen()) { for (const k in input) input[k] = false; }
+    if (ui.isOpen() || quests.blocking()) { for (const k in input) input[k] = false; }
 
     const hpBefore = player.hp;
     player.update(dt, input);
@@ -621,6 +632,7 @@ function loop(now) {
     entities.dayFactor = renderer.sky.dayFactor;
     entities.update(dt, isNight);
     achievements.onTick(timeOfDay);
+    quests.update(dt);
 
     // death
     if (player.dead && ui.overlay !== 'death') {
@@ -662,8 +674,20 @@ function loop(now) {
   // underwater tint
   document.getElementById('watertint').style.display = player.headInWater ? 'block' : 'none';
 
-  // persistent action hint based on selected item
-  ui.setAction(actionHintFor(ui.selected()));
+  // persistent action hint — if we're looking at a villager, prompt to talk;
+  // otherwise hint about the held item.
+  let talkNpc = null;
+  if (running && !ui.isOpen() && !quests.blocking() && !player.dead) {
+    const er = eyeRay();
+    const npc = entities.raycastMob(er.e.x, er.e.y, er.e.z, er.d.x, er.d.y, er.d.z, 4);
+    if (npc && npc.mob.type === 'villager') talkNpc = npc.mob;
+  }
+  if (talkNpc) {
+    const nm = talkNpc.who ? talkNpc.who.charAt(0).toUpperCase() + talkNpc.who.slice(1) : 'them';
+    ui.setAction(`🗨️ Right-click to talk to ${nm}`);
+  } else {
+    ui.setAction(actionHintFor(ui.selected()));
+  }
 
   renderer.render();
 
@@ -696,7 +720,7 @@ boot().then(() => {
     canvas.requestPointerLock();
   };
   ui.onRenderDist = (v) => { renderer.renderDist = v; };
-  entities.onPickup = (stack) => { achievements.onPickup(stack.id); return ui.addToInventory(stack); };
-  entities.onMobKill = (type) => { achievements.onMobKill(type); progression.onMobKill(type); };
+  entities.onPickup = (stack) => { achievements.onPickup(stack.id); quests.onPickup(stack.id); return ui.addToInventory(stack); };
+  entities.onMobKill = (type) => { achievements.onMobKill(type); progression.onMobKill(type); quests.onMobKill(type); };
   entities.onExplosion = explode;
 });

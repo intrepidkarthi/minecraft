@@ -129,3 +129,25 @@ canvas { image-rendering: pixelated; }
 #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: linear-gradient(#0b1020, #15203c); color: #fff; z-index: 70; }
 .loadtrack { width: 320px; height: 12px; background: #222; border: 2px solid #555; border-radius: 6px; overflow: hidden; }
 #loadbar { height: 100%; width: 0%; background: #6ddf4a; transition: width .2s; }
+
+/* ---------------- quest HUD (objective + compass) ---------------- */
+#questhud {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 30; pointer-events: none; text-align: center; color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,.7);
+  background: rgba(20,16,40,.55); border: 1px solid rgba(255,255,255,.15);
+  border-radius: 12px; padding: 8px 16px; min-width: 240px;
+  backdrop-filter: blur(4px);
+}
+#questhud .q-obj { font-size: 15px; font-weight: 700; }
+#questhud .q-nav { font-size: 18px; margin-top: 2px; color: #ffe14d; }
+#questhud .q-boss { display: flex; align-items: center; gap: 8px; margin-top: 6px; justify-content: center; font-size: 12px; }
+#questhud .q-bar { width: 160px; height: 10px; background: rgba(255,255,255,.15); border-radius: 5px; overflow: hidden; }
+#questhud .q-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff5a5a, #c41818); }
+
+/* ---------------- dialogue box ---------------- */
+.dialog-overlay { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.25); cursor: pointer; }
+.dialog-card { margin-bottom: 11vh; width: min(86vw, 560px); background: rgba(24,20,44,.96); border: 2px solid #ffe14d; border-radius: 16px; padding: 18px 22px; color: #fff; box-shadow: 0 12px 40px rgba(0,0,0,.5); text-align: left; }
+.dialog-name { font-size: 18px; font-weight: 800; color: #ffe14d; margin-bottom: 6px; }
+.dialog-text { font-size: 19px; line-height: 1.45; min-height: 56px; }
+.dialog-hint { margin-top: 12px; font-size: 13px; opacity: .7; text-align: right; }

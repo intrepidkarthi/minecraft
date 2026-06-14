@@ -46,6 +46,10 @@ for (const mat of ['wood', 'stone', 'iron', 'gold', 'diamond']) {
   item(mat + '_sword', matName + ' Sword', { stack: 1, tool: { cls: 'sword', tier: t, speed: 1.5, dura: DURA[t], dmg: SWORD_DMG[t] } });
 }
 
+// Legendary quest reward — a glowing, unbreakable star sword, far stronger than
+// any crafted blade. Granted during Adyah's "Lost Brother" adventure.
+item('star_blade', 'Star Blade', { stack: 1, glow: true, tool: { cls: 'sword', tier: 4, speed: 1.5, dura: 100000, dmg: 12 } });
+
 export function itemDef(id) {
   if (typeof id === 'number') return blockDef(id);
   return ITEMS[id];
@@ -97,7 +101,17 @@ function drawTool(P, kind, mat) {
   }
 }
 
+function drawStarBlade(P) {
+  const main = '#ffe14d', dark = '#e0a81f', glow = '#fff6b0';
+  for (const [x, y] of [[4, 12], [5, 11]]) { P(x, y, '#6b4a2a'); P(x + 1, y, '#8a6238'); } // handle
+  P(5, 10, '#9ad7ff'); P(6, 10, '#9ad7ff'); P(4, 9, '#9ad7ff');                            // guard
+  for (let i = 0; i < 7; i++) { P(6 + i, 8 - i, main); P(7 + i, 8 - i, i === 6 ? glow : dark); } // blade
+  P(13, 2, glow);
+  P(12, 1, '#ffffff'); P(14, 3, '#ffffff'); P(11, 4, '#fff6b0');                            // sparkles
+}
+
 function drawIcon(id, P, c) {
+  if (id === 'star_blade') { drawStarBlade(P); return; }
   const m = id.match(/^(wood|stone|iron|gold|diamond)_(pickaxe|axe|shovel|sword)$/);
   if (m) { drawTool(P, m[2], m[1]); return; }
   switch (id) {
