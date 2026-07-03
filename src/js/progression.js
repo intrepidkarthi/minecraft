@@ -1,6 +1,7 @@
 // progression.js — XP, levels, inventory unlocks, perks. Wired by main.js.
 "use strict";
 import { B } from './blocks.js';
+import { ENEMY_IDS, enemiesByTier } from './entities.js';
 
 const XP_NEED = (lvl) => 10 + lvl * 5;   // lvl 1->2 = 15, 2->3 = 20, ..., 10->11 = 60
 
@@ -11,7 +12,10 @@ const ORE_XP = {
   [B.DIAMOND_ORE]: 20,
   [B.REDSTONE_ORE]: 4
 };
-const HOSTILE_XP = { zombie: 5, skeleton: 5, creeper: 5, spider: 4 };
+// kill XP: classics + quest bosses, plus every adventure enemy by tier
+const HOSTILE_XP = { zombie: 5, skeleton: 5, creeper: 5, spider: 4, boss: 25, dragon: 40 };
+const TIER_XP = { small: 4, mid: 8, elite: 15, boss: 30 };
+for (const t in TIER_XP) for (const id of enemiesByTier(t)) if (HOSTILE_XP[id] == null) HOSTILE_XP[id] = TIER_XP[t];
 
 export const PERKS = [
   { id: 'fast_runner',  title: '🏃 Fast Runner',  desc: 'Sprint 25% faster' },
@@ -96,7 +100,7 @@ export class Progression {
   hasPerk(id) { return this.perks.has(id); }
 
   onBreakOre(blockId) { const x = ORE_XP[blockId]; if (x) this.addXp(x); }
-  onMobKill(type)     { const x = HOSTILE_XP[type]; if (x) this.addXp(x); }
+  onMobKill(type)     { const x = HOSTILE_XP[type] != null ? HOSTILE_XP[type] : (ENEMY_IDS.includes(type) ? 3 : 0); if (x) this.addXp(x); }
 
   _refreshBar() {
     const need = XP_NEED(this.level);

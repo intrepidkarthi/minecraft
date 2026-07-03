@@ -3,6 +3,7 @@
 import { B, blockDef, atlasCanvas, TILE, ATLAS_COLS } from './blocks.js';
 import { itemDef, itemName, itemIcon, maxStack, matchRecipe, smeltResult, fuelValue, ITEMS } from './items.js';
 import { PERKS } from './progression.js';
+import { gameMode, MODES } from './gamemode.js';
 
 const $ = (sel) => document.querySelector(sel);
 function el(tag, cls, parent) {
@@ -71,7 +72,7 @@ export class UI {
     this.craftGrid = new Array(9).fill(null);
     this.craftW = 2;
     this.container = null;  // {type, slots?|state?, pos}
-    this.overlay = null;    // 'inventory'|'crafting'|'furnace'|'chest'|'pause'|'death'|'help'|'skills'
+    this.overlay = null;    // 'inventory'|'crafting'|'furnace'|'chest'|'pause'|'death'|'help'|'skills'|'modes'
     this.onClose = null;
     this.onCraft = null;    // () => void  (set by main.js)
     this.world = null;
@@ -96,6 +97,10 @@ export class UI {
       const s = el('div', 'slot hot', this.elHotbar);
       this.hotSlots.push(s);
     }
+    // always-visible game-mode badge (top-right chip)
+    this.elModeBadge = el('div', null, document.body);
+    this.elModeBadge.id = 'modebadge';
+    this.setModeBadge(gameMode.def);
     this.elAction = $('#actiontext');
     this.elToast = $('#toast');
     this.elTooltip = $('#tooltip');
@@ -137,10 +142,18 @@ export class UI {
     }
   }
 
+  setModeBadge(def) { this.elModeBadge.textContent = def.icon + ' ' + def.name; }
+
   updateHUD(p) {
-    const key = [p.hp, p.hunger, p.air, p.headInWater].join(',');
+    const key = [p.hp, p.hunger, p.air, p.headInWater, gameMode.mode].join(',');
     if (key === this._hudCache) return;
     this._hudCache = key;
+    // creative/spectator don't use hearts/hunger/air — hide the rows entirely
+    const showBars = gameMode.usesHunger();
+    this.elHearts.style.display = showBars ? 'flex' : 'none';
+    this.elHunger.style.display = showBars ? 'flex' : 'none';
+    this.elAir.style.display = showBars ? 'flex' : 'none';
+    if (!showBars) return;
     const fill = (root, count, value, cls) => {
       root.innerHTML = '';
       for (let i = 0; i < count; i++) {
@@ -162,12 +175,14 @@ export class UI {
     const s = this.inv[this.sel];
     if (!s) return;
     if (s.unlimited) return;       // starter kit blocks never deplete
+    if (gameMode.infiniteItems()) return;   // creative mode: nothing runs out
     s.count -= n;
     if (s.count <= 0) this.inv[this.sel] = null;
     this.updateHotbar();
   }
 
   damageSelectedTool() {
+    if (!gameMode.toolDurability()) return; // tools only wear down in survival
     const s = this.inv[this.sel];
     if (!s || typeof s.id !== 'string') return;
     if (s.unlimited) return;       // starter tools never break
@@ -277,6 +292,7 @@ export class UI {
     if (this.overlay === 'death') return this._buildDeath(panel);
     if (this.overlay === 'help') return this._buildHelp(panel);
     if (this.overlay === 'skills') return this._buildSkills(panel);
+    if (this.overlay === 'modes') return this._buildModes(panel);
 
     const title = el('div', 'ptitle', panel);
 
@@ -316,6 +332,22 @@ export class UI {
       }
     }
 
+    // creative mode: endless palette of every block + handy items
+    if (this.overlay === 'inventory' && gameMode.is('creative')) {
+      el('div', 'ptitle small', panel).textContent = '🎨 All Blocks — endless!';
+      const pal = el('div', 'palette', panel);
+      const grid = el('div', 'grid g9', pal);
+      for (const id of this._paletteIds()) {
+        const mk = () => {
+          const tool = typeof id === 'string' && ITEMS[id] && ITEMS[id].tool;
+          const o = { id, count: tool ? 1 : 64, unlimited: true };
+          if (tool) o.dur = ITEMS[id].tool.dura;
+          return o;
+        };
+        this._slot(grid, mk, null, 'palette');
+      }
+    }
+
     // player inventory section — all rows are always available
     el('div', 'ptitle small', panel).textContent = '';
     const cap = 9 + this.mainRows * 9;
@@ -327,6 +359,22 @@ export class UI {
     for (let i = 0; i < 9; i++) {
       this._slot(hot, () => this.inv[i], (s) => { this.inv[i] = s; this.updateHotbar(); }, 'invhot');
     }
+  }
+
+  // every placeable block + useful items, for the creative "All Blocks" palette
+  _paletteIds() {
+    if (this._paletteCache) return this._paletteCache;
+    const skip = new Set([B.AIR, B.WATER, B.LAVA, B.BEDROCK, B.FURNACE_LIT, B.DOOR_OPEN]);
+    const ids = [];
+    for (const key of Object.keys(B)) { const id = B[key]; if (!skip.has(id)) ids.push(id); }
+    for (const it of ['diamond_sword', 'diamond_pickaxe', 'diamond_axe', 'diamond_shovel',
+      'iron_sword', 'iron_pickaxe', 'iron_axe', 'iron_shovel',
+      'apple', 'steak', 'porkchop_cooked', 'chicken_cooked',
+      'stick', 'coal', 'iron_ingot', 'gold_ingot', 'diamond', 'string', 'bone']) {
+      if (ITEMS[it]) ids.push(it);
+    }
+    this._paletteCache = ids;
+    return ids;
   }
 
   _craftResult() {
@@ -366,6 +414,26 @@ export class UI {
   _slotAction(button, shift, get, set, kind) {
     const cur = this.cursor;
     const s = get();
+    if (kind === 'palette') {
+      // creative palette: any click puts a fresh infinite copy on the cursor.
+      // A stack already held is stashed back into the inventory first (infinite
+      // copies are simply discarded) — never silently delete gathered items.
+      if (s) {
+        if (cur && !cur.unlimited) {
+          const left = this.addToInventory(cur);
+          if (left > 0) {
+            // no room to stash — keep holding the (remaining) items instead
+            cur.count = left;
+            this._renderCursor(); this._refreshOverlay();
+            return;
+          }
+        }
+        this.cursor = packStack(s, s.count);
+      }
+      this.audio.play('click');
+      this._renderCursor(); this._refreshOverlay();
+      return;
+    }
     if (kind === 'craftout') {
       if (button === 0) this._takeCraft(shift);
       this._renderCursor(); this._refreshOverlay();
@@ -418,28 +486,58 @@ export class UI {
 
   _slot(parent, get, set, kind) {
     const div = el('div', 'slot', parent);
+    // Stash the accessors on the node so a touch that *ends* over a different
+    // slot (a drag) can act on whatever slot is under the finger at release —
+    // elementFromPoint gives us the live node, this gives us its get/set/kind.
+    div._slotGet = get; div._slotSet = set; div._slotKind = kind;
     const render = () => this.renderSlotInto(div, get());
     render();
     div.addEventListener('mousedown', (e) => { e.preventDefault(); this._slotAction(e.button, e.shiftKey, get, set, kind); });
     div.addEventListener('contextmenu', e => e.preventDefault());
     div.addEventListener('mouseenter', () => { const s = get(); if (s) this._tooltipShow(itemName(s.id)); });
     div.addEventListener('mouseleave', () => { this.elTooltip.style.display = 'none'; });
-    // touch: tap = pick up / place, long-press = split half / place one.
-    let lpTimer = null, handled = false;
+    // touch: tap = pick up / place · drag from one slot to another = move the
+    // item · long-press (450ms) = split half / place one. Dragging is the gesture
+    // a kid reaches for first, so it has to actually move the item, not just
+    // pick it up and leave it floating.
+    let lpTimer = null, handled = false, sx = 0, sy = 0, moved = false;
     div.addEventListener('touchstart', (e) => {
       e.preventDefault(); e.stopPropagation();
       const t = e.changedTouches[0];
-      this.cursorEl.style.left = t.clientX + 'px'; this.cursorEl.style.top = t.clientY + 'px';
-      handled = false;
+      sx = t.clientX; sy = t.clientY; moved = false; handled = false;
+      this.cursorEl.style.left = sx + 'px'; this.cursorEl.style.top = sy + 'px';
       lpTimer = setTimeout(() => { handled = true; this._slotAction(2, false, get, set, kind); }, 450);
+    }, { passive: false });
+    div.addEventListener('touchmove', (e) => {
+      const t = e.changedTouches[0]; if (!t) return;
+      if (!moved && Math.hypot(t.clientX - sx, t.clientY - sy) > 12) {
+        moved = true;
+        clearTimeout(lpTimer);              // a drag is not a long-press
+        // lift the item onto the cursor so it visibly follows the finger
+        if (!handled && !this.cursor && get()) this._slotAction(0, false, get, set, kind);
+      }
+      if (moved) e.preventDefault();         // don't let the page scroll mid-drag
     }, { passive: false });
     div.addEventListener('touchend', (e) => {
       e.preventDefault(); e.stopPropagation();
       clearTimeout(lpTimer);
-      if (!handled) this._slotAction(0, false, get, set, kind);
+      if (handled) return;                   // long-press already acted
+      if (!moved) { this._slotAction(0, false, get, set, kind); return; }   // simple tap
+      // a drag: drop onto whatever slot is under the finger at release
+      const t = e.changedTouches[0];
+      const target = this._slotAt(t.clientX, t.clientY);
+      if (target && target._slotGet) this._slotAction(0, false, target._slotGet, target._slotSet, target._slotKind);
+      // released over no slot → the item stays on the cursor for a follow-up tap
     }, { passive: false });
     div.addEventListener('touchcancel', () => clearTimeout(lpTimer));
     return div;
+  }
+
+  // The slot node under a screen point (or null) — children resolve up to .slot,
+  // and #cursorstack is pointer-events:none so it never shadows the real slot.
+  _slotAt(x, y) {
+    const e = document.elementFromPoint(x, y);
+    return e && e.closest ? e.closest('.slot') : null;
   }
 
   _quickMove(s, kind) {
@@ -495,6 +593,7 @@ export class UI {
     el('div', 'ptitle', panel).textContent = 'Game Paused';
     const btn = (label, fn) => { const b = el('button', 'mbtn', panel); b.textContent = label; b.onclick = () => { this.audio.play('click'); fn(); }; return b; };
     btn('Back to Game', () => this.close());
+    btn('Game Mode', () => { this.overlay = 'modes'; this._refreshOverlay(); });
     btn('Skills & Perks', () => { this.overlay = 'skills'; this._refreshOverlay(); });
     btn('How to Play', () => { this.overlay = 'help'; this._refreshOverlay(); });
     btn(this.audio.muted ? 'Sound: OFF' : 'Sound: ON', () => { this.audio.toggleMute(); this._refreshOverlay(); });
@@ -506,6 +605,28 @@ export class UI {
       b.onclick = () => { if (this.onRenderDist) this.onRenderDist(v); this.renderDist = v; this._refreshOverlay(); };
     }
     el('div', 'hint', panel).textContent = 'Your world saves automatically.';
+  }
+
+  _buildModes(panel) {
+    panel.classList.add('menu', 'modes');
+    el('div', 'ptitle', panel).textContent = '🎮 Game Mode';
+    for (const m of Object.keys(MODES)) {
+      const def = MODES[m];
+      const b = el('button', 'mbtn mode' + (gameMode.is(m) ? ' active' : ''), panel);
+      const mi = el('span', 'mmi', b); mi.textContent = def.icon;
+      const tx = el('span', 'mtx', b);
+      el('b', null, tx).textContent = def.name;
+      el('small', null, tx).textContent = def.desc;
+      b.onclick = () => {
+        this.audio.play('click');
+        const changed = gameMode.set(m);
+        if (changed) this.toast(def.icon + ' Switched to ' + def.name + ' mode!');
+        this.close();
+      };
+    }
+    const back = el('button', 'mbtn', panel);
+    back.textContent = 'Back';
+    back.onclick = () => { this.audio.play('click'); this.close(); };
   }
 
   _buildDeath(panel) {
@@ -609,8 +730,9 @@ export class UI {
       ['Right click or R', 'Place block / use / eat'],
       ['1–9 / scroll', 'Choose hotbar item'],
       ['E', 'Inventory & 2×2 crafting'], ['K', 'Skills & perks'], ['Q', 'Drop item'],
-      ['F', 'Toggle fly'], ['Space (flying)', 'Fly up'], ['Shift (flying)', 'Fly down'],
-      ['M', 'Mute'], ['F3', 'Debug info'], ['Esc', 'Pause']
+      ['M', 'Game modes'], ['J', '📖 Adventure journal'],
+      ['F', 'Toggle fly (Creative)'], ['Space (flying)', 'Fly up'], ['Shift (flying)', 'Fly down'],
+      ['F3', 'Debug info'], ['Esc', 'Pause']
     ];
     const tbl = el('div', 'helptable', keysBox);
     for (const [k, v] of rows) {

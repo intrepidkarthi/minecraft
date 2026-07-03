@@ -1,6 +1,7 @@
 // achievements.js — Adyah's milestones: toast + sound when unlocked, persisted in save
 "use strict";
 import { B } from './blocks.js';
+import { ENEMY_IDS } from './entities.js';
 
 const ACH = [
   { id: 'first_chop',    title: '🌳 First Tree!',         hint: 'Chopped your first log.' },
@@ -12,10 +13,19 @@ const ACH = [
   { id: 'first_mob',     title: '⚔️ Monster Slayer!',      hint: 'Defeated your first monster.' },
   { id: 'first_iron',    title: '⛓️ Iron Age!',            hint: 'Picked up your first iron ingot.' },
   { id: 'first_diamond', title: '💎 Diamond Hunter!',      hint: 'Found a diamond!' },
-  { id: 'builder',       title: '🏗️ Builder!',             hint: 'Placed 25 blocks.' }
+  { id: 'builder',       title: '🏗️ Builder!',             hint: 'Placed 25 blocks.' },
+  { id: 'adventurer_1',  title: '🗺️ First Adventure!',     hint: 'Completed your first endless adventure.' },
+  { id: 'adventurer_10', title: '🌟 Serial Adventurer!',   hint: 'Completed 10 endless adventures.' },
+  { id: 'adventurer_25', title: '🏆 Legend of the Land!',  hint: 'Completed 25 endless adventures.' },
+  { id: 'level5_hero',   title: '⚔️ Level 5 Hero!',        hint: 'Conquered a level 5 (or higher) adventure.' }
 ];
 
-const HOSTILE = new Set(['zombie', 'skeleton', 'creeper', 'spider']);
+// every adventure enemy counts as a monster, plus the classics and quest bosses
+const HOSTILE = new Set(['zombie', 'skeleton', 'creeper', 'spider', 'boss', 'dragon', ...ENEMY_IDS]);
+
+// module-level hook so quests.js can report finished adventures without wiring
+let _active = null;
+export function reportAdventure(info) { if (_active) _active.onAdventure(info); }
 const ORE_DROP_ITEM = new Set(['iron_ingot', 'diamond']);
 
 export class Achievements {
@@ -24,6 +34,7 @@ export class Achievements {
     this.unlocked = new Set();
     this.placed = 0;
     this.sawNight = false;
+    _active = this;
   }
 
   _unlock(id) {
@@ -47,6 +58,14 @@ export class Achievements {
   }
   onCraft() { this._unlock('first_craft'); }
   onMobKill(type) { if (HOSTILE.has(type)) this._unlock('first_mob'); }
+  // called by quests.js after every finished endless adventure: {done, level, result}
+  onAdventure(info) {
+    if (!info) return;
+    if (info.done >= 1)  this._unlock('adventurer_1');
+    if (info.done >= 10) this._unlock('adventurer_10');
+    if (info.done >= 25) this._unlock('adventurer_25');
+    if (info.level >= 5) this._unlock('level5_hero');
+  }
   onPickup(itemId) {
     if (itemId === 'iron_ingot') this._unlock('first_iron');
     if (itemId === 'diamond')    this._unlock('first_diamond');

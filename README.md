@@ -20,6 +20,18 @@ Windows and macOS. Rebuilt from the ground up on a modular Three.js engine.
   pigs, cows, sheep, chickens; drops, item entities with magnet pickup
 - **Feel** — block-crack overlay, particles, procedural sound effects, head bob,
   sprint FOV, first-person held item with swing animation
+- **Four game modes** — ⚔️ Survival, 🎨 Creative (fly, endless block palette,
+  invulnerable), 🗺️ Adventure (quest-focused, adventures come twice as fast) and
+  👻 Spectator (noclip through everything, invisible to mobs). Pick at world
+  start, switch anytime with **M**
+- **Endless adventures** — levelled random quests that escalate forever: ambushes,
+  bounties, guard duty, egg hunts, monster waves, titan bosses; themed storylines,
+  named villains, scaling loot & XP — all logged in Adyah's **Book of
+  Adventures** (**J**)
+- **A bigger world of creatures** — mummies, witches, pirates, ice golems, shadow
+  cats, lava hounds, crystal slimes, the Skeleton King & Ghost Captain bosses;
+  plus rabbits, foxes, deer, cats and wolf pups; villagers in varied family
+  outfits who hop and look around
 
 Everything (textures, sounds, mob skins) is generated procedurally at startup —
 no asset downloads, 100% offline.
@@ -44,8 +56,10 @@ Build installers: `npm run dist:mac` / `npm run dist:win` → `dist/`
 | **1–9 / scroll** | Hotbar |
 | **E** | Inventory + 2×2 crafting |
 | **Q** | Drop item |
-| **F** | Toggle fly |
-| **M** | Mute |
+| **F** | Toggle fly (Creative / Spectator) |
+| **M** | Game mode switcher |
+| **J** | Book of Adventures (quest journal) |
+| **G** | Start a random adventure now |
 | **F3** | Debug overlay |
 | **Esc** | Pause (auto-saves) |
 
@@ -74,6 +88,10 @@ minecraAft/
     ├── vendor/three.module.js
     └── js/
         ├── main.js      Game loop: input, mining, combat, furnaces, saving
+        ├── gamemode.js  Survival/Creative/Adventure/Spectator rules
+        ├── quests.js    Story + endless levelled adventure generator, journal
+        ├── progression.js  XP, levels, perks
+        ├── achievements.js Milestone toasts
         ├── world.js     Chunk store + flood-fill lighting engine
         ├── worldgen.js  Biomes, terrain, caves, ores, trees
         ├── mesher.js    Chunk meshing: smooth light + ambient occlusion

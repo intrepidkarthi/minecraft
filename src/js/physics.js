@@ -17,7 +17,7 @@ function solidAt(world, x, y, z) {
   return blockDef(world.getBlock(Math.floor(x), Math.floor(y), Math.floor(z))).solid;
 }
 
-function collides(world, e, px, py, pz) {
+export function collides(world, e, px, py, pz) {
   const x0 = Math.floor(px - e.hw), x1 = Math.floor(px + e.hw - 1e-7);
   const y0 = Math.floor(py), y1 = Math.floor(py + e.h - 1e-7);
   const z0 = Math.floor(pz - e.hw), z1 = Math.floor(pz + e.hw - 1e-7);

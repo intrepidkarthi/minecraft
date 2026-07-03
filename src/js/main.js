@@ -3,7 +3,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { B, blockDef, atlasCanvas, TILE, ATLAS_COLS } from './blocks.js';
 import { World } from './world.js';
-import { CX, CZ, SEA } from './worldgen.js';
+import { CX, CY, CZ, SEA } from './worldgen.js';
 import { Renderer } from './renderer.js';
 import { Player } from './player.js';
 import { Entities } from './entities.js';
@@ -14,6 +14,8 @@ import { itemDef, breakSeconds, canHarvest, attackDamage, smeltResult, fuelValue
 import { Achievements } from './achievements.js';
 import { Progression } from './progression.js';
 import { Quests } from './quests.js';
+import { gameMode, MODES } from './gamemode.js';
+import { collides } from './physics.js';
 
 const HAS_API = !!(window.gameAPI && window.gameAPI.isElectron);
 const Store = {
@@ -81,7 +83,7 @@ function setupTouchControls() {
   hold(bJump, () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
   hold(bDown, () => { keys['ShiftLeft'] = true; }, () => { keys['ShiftLeft'] = false; });
   tap(bUse, () => rightClick());
-  tap(bFly, () => { player.flying = !player.flying; ui.toast(player.flying ? '🕊️ Flying — ⤴️ up, ⬇️ down' : 'Flying off'); });
+  tap(bFly, () => toggleFly());
   tap(bInv, () => ui.open('inventory'));
   tap(bClose, () => ui.close());
 
@@ -150,9 +152,61 @@ function giveBuilderKit() {
   ui.updateHotbar();
 }
 
+// Starter kit for adventure mode — a good sword and snacks for the road.
+// Granted once per world (persisted like `builderKit`).
+let adventureKitGiven = false;
+function giveAdventureKit() {
+  const give = (stack) => {
+    if (ui.inv.some(s => s && s.id === stack.id)) return;
+    const slot = ui.inv.findIndex(s => !s);
+    if (slot >= 0) ui.inv[slot] = stack;
+  };
+  give({ id: 'iron_sword', count: 1, dur: ITEMS['iron_sword'].tool.dura, unlimited: true });
+  give({ id: 'steak', count: 10 });
+  give({ id: 'apple', count: 10 });
+  ui.updateHotbar();
+  ui.toast('🗺️ Adventure kit: a shiny sword and snacks for the road!');
+}
+
+// mode-aware fly toggle (F key + touch button share it)
+function toggleFly() {
+  if (gameMode.forcedFly()) { ui.toast('👻 Spectators always float!'); return; }
+  if (!gameMode.canFly()) { ui.toast('🕊️ Flying works in Creative mode — press M to switch!'); return; }
+  player.flying = !player.flying;
+  ui.toast(player.flying ? '🕊️ Flying: ON — Space = up, Shift = down' : 'Flying: OFF');
+}
+
+// gentle "you can't build here" reminder, at most once per 10s
+let advHintAt = -Infinity;
+function adventureHint() {
+  const now = performance.now();
+  if (now - advHintAt < 10000) return;
+  advHintAt = now;
+  ui.toast('🗺️ Adventure mode — explore and quest!');
+}
+
+// Leaving spectator's noclip while inside solid terrain would entomb the
+// player (collision snapping freezes them in place, and adventure mode can't
+// even mine an exit). Pop them up to the nearest free spot above instead.
+function unstickPlayer() {
+  if (!collides(world, player, player.pos.x, player.pos.y, player.pos.z)) return;
+  for (let y = Math.floor(player.pos.y); y < CY; y++) {
+    const fy = y + 0.01;
+    if (!collides(world, player, player.pos.x, fy, player.pos.z)) {
+      player.pos.y = fy;
+      player.vel.x = player.vel.y = player.vel.z = 0;
+      player.fallStart = null;
+      return;
+    }
+  }
+}
+
 async function boot() {
   saveData = await Store.load();
   if (saveData && saveData.version !== 2) saveData = null; // old format → fresh world
+  // apply the saved game mode BEFORE anything asks gameMode questions
+  if (saveData && saveData.mode) gameMode.deserialize(saveData.mode);
+  adventureKitGiven = !!(saveData && saveData.adventureKit);
 
   const seed = saveData ? saveData.seed : (Math.random() * 2 ** 31) | 0;
   world = new World(seed);
@@ -174,6 +228,23 @@ async function boot() {
   quests = new Quests({ player, entities, ui, world, audio, progression, lockPointer: () => { if (!TOUCH) canvas.requestPointerLock(); } });
   ui.onCraft = () => achievements.onCraft();
 
+  // celebrate + apply every mode switch in one place
+  gameMode.onChange = (m, prev) => {
+    const def = MODES[m];
+    ui.toast(def.icon + ' Switched to ' + def.name + ' mode!');
+    ui.setModeBadge(def);
+    ui._hudCache = '';            // repaint hearts/hunger rows for the new rules
+    ui.updateHUD(player);
+    player.fallForgive = 3;       // forgiving landing after any switch
+    if (gameMode.forcedFly()) player.flying = true;
+    else if (!gameMode.canFly()) player.flying = false;
+    if (!gameMode.noclip()) unstickPlayer(); // never entomb a player who noclipped into terrain
+    if (m === 'creative') giveBuilderKit();
+    if (m === 'adventure' && !adventureKitGiven) { adventureKitGiven = true; giveAdventureKit(); }
+    audio.play('levelup');
+    doSave();
+  };
+
   // spawn point
   let spawn;
   if (saveData && saveData.player) {
@@ -182,6 +253,11 @@ async function boot() {
     player.yaw = sp.yaw; player.pitch = sp.pitch;
     player.hp = sp.hp; player.hunger = sp.hunger;
     player.flying = !!sp.flying;
+    if (gameMode.forcedFly()) player.flying = true;
+    else if (!gameMode.canFly()) player.flying = false;
+    // saved while flying but this mode can't fly (e.g. pre-mode save now in
+    // survival): forgive the forced drop just like a live mode switch would
+    if (sp.flying && !player.flying) player.fallForgive = 3;
     player.spawn = sp.spawn ? { x: sp.spawn[0], y: sp.spawn[1], z: sp.spawn[2] } : { ...player.pos };
     ui.deserialize(saveData.ui);
     entities.deserialize(saveData.drops);
@@ -251,7 +327,9 @@ function showModeSelect() {
     TOUCH = touch;
     sel.style.display = 'none';
     if (TOUCH) setupTouchControls();
-    playOverlay.style.display = 'flex';
+    // a save with a remembered game mode skips the second picker
+    if (saveData && saveData.mode) playOverlay.style.display = 'flex';
+    else showGameModeSelect();
   };
   // don't let clicks on this screen fall through to the game (mine/place)
   sel.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -261,6 +339,29 @@ function showModeSelect() {
   tBtn.addEventListener('click', () => choose(true));
   // highlight the auto-detected option as a hint
   (TOUCH_DETECTED ? tBtn : dBtn).classList.add('suggested');
+  sel.style.display = 'flex';
+}
+
+// Second start screen: pick a game mode (Survival / Creative / Adventure / Spectator).
+function showGameModeSelect() {
+  const sel = document.getElementById('gamemodeselect');
+  const wrap = document.getElementById('gamemodebtns');
+  wrap.innerHTML = '';
+  sel.addEventListener('mousedown', (e) => e.stopPropagation());
+  for (const m of Object.keys(MODES)) {
+    const def = MODES[m];
+    const b = document.createElement('button');
+    const mi = document.createElement('span'); mi.className = 'mi'; mi.textContent = def.icon; b.appendChild(mi);
+    const nm = document.createElement('b'); nm.textContent = def.name; b.appendChild(nm);
+    const ds = document.createElement('small'); ds.textContent = def.desc; b.appendChild(ds);
+    if (gameMode.is(m)) b.classList.add('suggested');
+    b.addEventListener('click', () => {
+      sel.style.display = 'none';
+      gameMode.set(m);            // no-op if already the current mode
+      playOverlay.style.display = 'flex';
+    });
+    wrap.appendChild(b);
+  }
   sel.style.display = 'flex';
 }
 
@@ -292,17 +393,18 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'KeyK' && !ui.isOpen()) { ui.open('skills'); document.exitPointerLock(); return; }
+  if (e.code === 'KeyM' && !ui.isOpen()) { ui.open('modes'); document.exitPointerLock(); return; }
   if (ui.isOpen() && ui.overlay !== 'pause') {
     if (e.code === 'KeyE') ui.close();
     return;
   }
   if (ui.isOpen()) return;
   if (e.code === 'KeyE') { ui.open('inventory'); document.exitPointerLock(); }
-  if (e.code === 'KeyF') { player.flying = !player.flying; ui.toast(player.flying ? '🕊️ Flying: ON — Space = up, Shift = down' : 'Flying: OFF'); }
+  if (e.code === 'KeyF') toggleFly();
   if (e.code === 'KeyG') { quests.debugStartAdventure(); ui.toast('🎲 Starting a random adventure!'); }  // test/spawn an adventure now
+  if (e.code === 'KeyJ') { if (quests.toggleJournal) quests.toggleJournal(); }   // 📖 adventure journal
   if (e.code === 'KeyR') rightClick();              // keyboard alternative for placement / use
   if (e.code === 'KeyB') { mouseDown[0] = true; swingT = 0; }  // keyboard alternative for mine / attack
-  if (e.code === 'KeyM') { const m = audio.toggleMute(); ui.toast(m ? 'Sound muted' : 'Sound on'); }
   if (e.code === 'F3') { debugOn = !debugOn; ui.showDebug(debugOn); }
   if (e.code === 'KeyQ') dropSelected();
   if (e.code.startsWith('Digit')) {
@@ -382,6 +484,7 @@ function eyeRay() {
 }
 
 function rightClick() {
+  if (!gameMode.canInteract()) return;   // spectators drift through, hands-free
   const { e, d } = eyeRay();
   // talk to a villager: either the one we're aiming at, or — to be forgiving for
   // a young kid — the nearest story villager (Mom/Aarav) we're standing next to.
@@ -440,9 +543,10 @@ function rightClick() {
   // place block
   if (typeof held.id !== 'number') {
     // tool/item selected — gentle one-time hint that placement needs a block in hand
-    if (hit && !hintedPlace) { ui.toast('📦 Press 6, 7, 8 or 9 to pick a block to place'); hintedPlace = true; }
+    if (hit && !hintedPlace && gameMode.canPlace()) { ui.toast('📦 Press 6, 7, 8 or 9 to pick a block to place'); hintedPlace = true; }
     return;
   }
+  if (!gameMode.canPlace()) { adventureHint(); return; }
   if (!hit) return;
   const px = hit.x + hit.face[0], py = hit.y + hit.face[1], pz = hit.z + hit.face[2];
   const targetId = world.getBlock(px, py, pz);
@@ -500,7 +604,7 @@ function doMining(dt) {
   const { e, d } = eyeRay();
 
   // attack mobs first
-  if (attackCd <= 0) {
+  if (attackCd <= 0 && gameMode.canFight()) {
     const mobHit = entities.raycastMob(e.x, e.y, e.z, d.x, d.y, d.z, 3.6);
     const blockHit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, 3.6);
     if (mobHit && (!blockHit || mobHit.dist < blockHit.dist)) {
@@ -515,16 +619,25 @@ function doMining(dt) {
     }
   }
 
+  if (!gameMode.canBreak()) {
+    // hint only on an actual block-break attempt: not mid-combat (attack
+    // cooldown ticking or a mob in the crosshair) and actually aiming at a block
+    if (gameMode.is('adventure') && attackCd <= 0
+        && !entities.raycastMob(e.x, e.y, e.z, d.x, d.y, d.z, 3.6)
+        && world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach)) adventureHint();
+    mineTarget = null; mineProgress = 0; renderer.setCrack(null, 0);
+    return;
+  }
   const hit = world.raycast(e.x, e.y, e.z, d.x, d.y, d.z, player.reach);
   if (!hit) { mineTarget = null; mineProgress = 0; renderer.setCrack(null, 0); return; }
   const def = blockDef(hit.id);
-  if (def.hardness < 0 && !player.flying) { renderer.setCrack(null, 0); return; }
+  if (def.hardness < 0 && !gameMode.instaBreak()) { renderer.setCrack(null, 0); return; }
 
   const tkey = hit.x + ',' + hit.y + ',' + hit.z;
   if (mineTarget !== tkey) {
     mineTarget = tkey;
     mineProgress = 0;
-    mineTime = player.flying ? 0.12 : breakSeconds(def, ui.selected());
+    mineTime = gameMode.instaBreak() ? 0.12 : breakSeconds(def, ui.selected());
   }
   swingT = Math.min(swingT, 0.25); // keep swinging
   mineProgress += dt / mineTime;
@@ -558,8 +671,8 @@ function breakBlock(hit, def) {
   achievements.onBreak(hit.id);
   progression.onBreakOre(hit.id);
 
-  // drops
-  if (!player.flying) {
+  // drops (survival only — creative breaks just vanish)
+  if (gameMode.blockDrops()) {
     let drops = [];
     if (typeof def.drop === 'string' && def.drop.startsWith('leaves')) {
       if (Math.random() < 0.05) drops.push({ id: 'apple', count: 1 });
@@ -574,9 +687,6 @@ function breakBlock(hit, def) {
     const held = ui.selected();
     if (held && typeof held.id === 'string' && ITEMS[held.id] && ITEMS[held.id].tool && def.hardness > 0) ui.damageSelectedTool();
     player.exhaustion += 0.03;
-  } else {
-    // flying = creative-ish: still give the block
-    const id = def.drop && def.drop.id !== undefined ? def.drop.id : hit.id;
   }
 }
 
@@ -737,7 +847,9 @@ function buildSave() {
     ach: achievements.serialize(),
     prog: progression.serialize(),
     quest: quests.serialize(),
-    builderKit: true
+    builderKit: true,
+    mode: gameMode.serialize(),
+    adventureKit: adventureKitGiven
   };
 }
 let saveTimer = 0;

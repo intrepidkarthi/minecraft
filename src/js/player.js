@@ -2,6 +2,7 @@
 "use strict";
 import { B } from './blocks.js';
 import { moveEntity, inBlock, headInBlock, GRAVITY } from './physics.js';
+import { gameMode } from './gamemode.js';
 
 export class Player {
   constructor(world) {
@@ -30,7 +31,8 @@ export class Player {
 
     this.inWater = false; this.headInWater = false; this.inLava = false;
     this.onHurt = null; this.onSound = null;
-    this._airTick = 0; this._lavaTick = 0;
+    this.fallForgive = 0;     // seconds of fall-damage forgiveness (after a mode switch)
+    this._airTick = 0; this._lavaTick = 0; this._voidTick = 0;
     this.bobPhase = 0; this.bobAmt = 0;
   }
 
@@ -43,9 +45,12 @@ export class Player {
   update(dt, input) {
     if (this.dead) return;
     const w = this.world;
-    this.inWater = inBlock(w, this, B.WATER);
-    this.headInWater = headInBlock(w, this, this.eye, B.WATER);
-    this.inLava = inBlock(w, this, B.LAVA);
+    if (gameMode.forcedFly()) this.flying = true;         // spectator always floats
+    const noclip = gameMode.noclip();
+    this.fallForgive = Math.max(0, this.fallForgive - dt);
+    this.inWater = noclip ? false : inBlock(w, this, B.WATER);
+    this.headInWater = noclip ? false : headInBlock(w, this, this.eye, B.WATER);
+    this.inLava = noclip ? false : inBlock(w, this, B.LAVA);
 
     // --- desired horizontal movement ---
     let fx = 0, fz = 0;
@@ -63,6 +68,7 @@ export class Player {
     if (this.sprinting) speed = 5.61 * this.sprintMult;
     if (this.sneaking) speed = 1.31;
     if (this.flying) speed = input.sprint ? 16 : 10;
+    if (noclip) speed *= 1.3;                             // spectator glides faster
     if (this.inWater && !this.flying) speed *= 0.55;
 
     const accel = this.onGround || this.flying ? 60 : 18;
@@ -100,12 +106,21 @@ export class Player {
     }
     if (this.inWater || this.flying) this.fallStart = null;
 
-    moveEntity(w, this, dt);
+    if (noclip) {
+      // spectator: pass straight through blocks, no collision at all
+      this.pos.x += this.vel.x * dt;
+      this.pos.y += this.vel.y * dt;
+      this.pos.z += this.vel.z * dt;
+      this.onGround = false;
+      this.fallStart = null;
+    } else {
+      moveEntity(w, this, dt);
+    }
 
     if (this.onGround && !wasGround && this.fallStart !== null) {
       const dist = this.fallStart - this.pos.y;
       const dmg = Math.floor((dist - 3) * this.fallDmgMult);
-      if (dmg > 0) {
+      if (dmg > 0 && this.fallForgive <= 0) {
         this.damage(dmg, 'fall');
         if (this.onSound) this.onSound('fall');
       }
@@ -115,41 +130,56 @@ export class Player {
     else if (this.fallStart !== null) this.fallStart = Math.max(this.fallStart, this.pos.y);
     else if (!this.flying && !this.inWater && this.vel.y < 0) this.fallStart = this.pos.y;
 
-    // --- environment damage ---
+    // --- environment damage (spectator ghosts float through all of it) ---
     this.hurtTimer = Math.max(0, this.hurtTimer - dt);
-    if (this.inLava) {
-      this._lavaTick += dt;
-      if (this._lavaTick > 0.5) { this._lavaTick = 0; this.damage(4, 'lava'); }
-    }
-    if (this.headInWater) {
-      this._airTick += dt;
-      if (this._airTick > 1.5) { this._airTick = 0; if (this.air > 0) this.air--; else this.damage(2, 'drown'); }
-    } else { this.air = this.maxAir; this._airTick = 0; }
+    if (!noclip) {
+      if (this.inLava) {
+        this._lavaTick += dt;
+        if (this._lavaTick > 0.5) { this._lavaTick = 0; this.damage(4, 'lava'); }
+      }
+      if (this.headInWater) {
+        this._airTick += dt;
+        if (this._airTick > 1.5) { this._airTick = 0; if (this.air > 0) this.air--; else this.damage(2, 'drown'); }
+      } else { this.air = this.maxAir; this._airTick = 0; }
 
-    // cactus contact
-    const px = Math.floor(this.pos.x), py = Math.floor(this.pos.y), pz = Math.floor(this.pos.z);
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      if (w.getBlock(px + dx, py, pz + dz) === B.CACTUS) {
-        const gx = px + dx + 0.5, gz = pz + dz + 0.5;
-        if (Math.abs(this.pos.x - gx) < 0.5 + this.hw && Math.abs(this.pos.z - gz) < 0.5 + this.hw) this.damage(1, 'cactus');
+      // cactus contact
+      const px = Math.floor(this.pos.x), py = Math.floor(this.pos.y), pz = Math.floor(this.pos.z);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (w.getBlock(px + dx, py, pz + dz) === B.CACTUS) {
+          const gx = px + dx + 0.5, gz = pz + dz + 0.5;
+          if (Math.abs(this.pos.x - gx) < 0.5 + this.hw && Math.abs(this.pos.z - gz) < 0.5 + this.hw) this.damage(1, 'cactus');
+        }
       }
     }
 
+    // fell out of the world? (creative/spectator get whisked back to spawn)
+    if (this.pos.y < -12) {
+      this._voidTick += dt;
+      if (this._voidTick > 0.5) { this._voidTick = 0; this.damage(4, 'void'); }
+    } else this._voidTick = 0;
+
     // --- hunger / regen ---
-    if (this.sprinting) this.exhaustion += dt * 0.45;
-    if (len > 0 && this.onGround) this.exhaustion += dt * 0.02;
-    if (this.exhaustion > 4) {
-      this.exhaustion -= 4;
-      if (this.saturation > 0) this.saturation--;
-      else if (this.hunger > 0) this.hunger--;
-    }
-    if (this.hunger >= 18 && this.hp < this.maxHp) {
-      this.regenTimer += dt;
-      if (this.regenTimer > 3) { this.regenTimer = 0; this.hp = Math.min(this.maxHp, this.hp + 1); this.exhaustion += 1.5; }
-    }
-    if (this.hunger <= 0) {
-      this.starveTimer += dt;
-      if (this.starveTimer > 4) { this.starveTimer = 0; if (this.hp > 1) this.damage(1, 'starve'); }
+    if (gameMode.usesHunger()) {
+      const need = 4 / gameMode.hungerRate();   // adventure mode drains slower
+      if (this.sprinting) this.exhaustion += dt * 0.45;
+      if (len > 0 && this.onGround) this.exhaustion += dt * 0.02;
+      if (this.exhaustion > need) {
+        this.exhaustion -= need;
+        if (this.saturation > 0) this.saturation--;
+        else if (this.hunger > 0) this.hunger--;
+      }
+      if (this.hunger >= 18 && this.hp < this.maxHp) {
+        this.regenTimer += dt;
+        if (this.regenTimer > 3) { this.regenTimer = 0; this.hp = Math.min(this.maxHp, this.hp + 1); this.exhaustion += 1.5; }
+      }
+      if (this.hunger <= 0) {
+        this.starveTimer += dt;
+        if (this.starveTimer > 4) { this.starveTimer = 0; if (this.hp > 1) this.damage(1, 'starve'); }
+      }
+    } else {
+      // creative & spectator never get hungry or hurt — keep everything topped up
+      this.hp = this.maxHp; this.hunger = 20; this.saturation = 5;
+      this.exhaustion = 0; this.starveTimer = 0; this.regenTimer = 0;
     }
 
     // --- head bob ---
@@ -164,6 +194,11 @@ export class Player {
 
   damage(n, cause) {
     if (this.dead || this.hurtTimer > 0 || this.flying && (cause === 'fall')) return;
+    if (gameMode.invulnerable()) {
+      // creative/spectator can't be hurt — but the void still sends them home
+      if (cause === 'void') { this.pos = { ...this.spawn }; this.vel = { x: 0, y: 0, z: 0 }; this.fallStart = null; }
+      return;
+    }
     this.hp -= n;
     this.hurtTimer = 0.5;
     if (this.onHurt) this.onHurt(n, cause);

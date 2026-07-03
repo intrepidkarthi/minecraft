@@ -184,3 +184,23 @@ body.is-touch #cursorstack .icon { width: 46px; height: 46px; }
 .modebtns button b { font-size: 22px; }
 .modebtns button small { color: #cfcfe0; font-size: 14px; }
 .modebtns button.suggested { border-color: #6ddf4a; box-shadow: 0 0 0 2px rgba(109,223,74,.35); }
+
+/* ---------------- game-mode picker (survival / creative / adventure / spectator) ---------------- */
+#gamemodeselect { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8, 10, 24, .72); z-index: 64; }
+#gamemodeselect .modebtns button { width: 200px; }
+#gamemodeselect .modebtns button small { min-height: 34px; }
+
+/* ---------------- mode badge chip (always visible, top-right) ---------------- */
+#modebadge { position: fixed; top: 14px; right: 14px; z-index: 30; pointer-events: none; color: #fff;
+  background: rgba(20, 16, 40, .55); border: 1px solid rgba(255, 255, 255, .2); border-radius: 20px;
+  padding: 5px 14px; font: 700 14px 'Segoe UI', sans-serif; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+  backdrop-filter: blur(4px); }
+
+/* ---------------- in-game mode switcher overlay ---------------- */
+.panel.modes .mbtn.mode { display: flex; align-items: center; gap: 12px; text-align: left; min-width: 300px; padding: 10px 16px; }
+.panel.modes .mbtn.mode .mmi { font-size: 26px; line-height: 1; }
+.panel.modes .mbtn.mode .mtx { display: flex; flex-direction: column; gap: 1px; }
+.panel.modes .mbtn.mode .mtx small { color: #ddd; font-weight: 400; font-size: 12px; text-shadow: none; }
+
+/* ---------------- creative "All Blocks" palette ---------------- */
+.palette { max-height: 236px; overflow-y: auto; margin: 2px 0 4px; padding-right: 2px; }
